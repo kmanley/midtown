@@ -48,7 +48,11 @@ import (
 	"time"
 )
 
-const MAX_TASK_COUNT = 99999
+const (
+	ACTIVE         = "Active"
+	COMPLETED      = "Complted"
+	MAX_TASK_COUNT = 99999
+)
 
 var TASK_KEY_LEN = len(fmt.Sprint(MAX_TASK_COUNT))
 
@@ -61,12 +65,24 @@ type Model struct {
 	ShutdownFlag chan bool
 }
 
-func (this *Model) Init(dbname string, mode os.FileMode) {
+func (this *Model) Init(dbname string, mode os.FileMode) error {
 	db, err := bolt.Open(dbname, mode, nil)
 	if err != nil {
 		glog.Fatalf("failed to open db %s: %s", dbname, err)
 	}
 	this.Db = db
+	err = this.Db.Update(func(tx *bolt.Tx) error {
+		locs := []string{ACTIVE, COMPLETED}
+		for idx := range locs {
+			_, err := tx.CreateBucketIfNotExists([]byte(locs[idx] + "Jobs"))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
+
 }
 
 func (this *Model) Close() {
@@ -98,42 +114,41 @@ func (this *Model) NewJobID() (newID JobID) {
 	return newID
 }
 
-func (this *Model) getActiveJobsBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
-	bucket, err := tx.CreateBucketIfNotExists([]byte("ActiveJobs"))
-	if err != nil {
-		glog.Error("failed to create ActiveJobs bucket", err)
-		return nil, err
+func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error) {
+	bucket := tx.Bucket([]byte(which + "Jobs"))
+	if bucket == nil {
+		return nil, fmt.Errorf("failed to open %sJobs bucket", which)
 	}
 	return bucket, nil
 }
 
+func (this *Model) getActiveJobsBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
+	return this.getJobsBucket(tx, ACTIVE)
+}
+
 func (this *Model) getCompletedJobsBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
-	bucket, err := tx.CreateBucketIfNotExists([]byte("CompletedJobs"))
-	if err != nil {
-		glog.Error("failed to create CompletedJobs bucket", err)
-		return nil, err
+	return this.getJobsBucket(tx, COMPLETED)
+}
+
+func (this *Model) getTasksBucketName(jobId JobID, which string) string {
+	return string(jobId) + "-" + which
+}
+
+func (this *Model) getTasksBucket(tx *bolt.Tx, jobId JobID, which string) (*bolt.Bucket, error) {
+	bucketName := this.getTasksBucketName(jobId, which)
+	bucket := tx.Bucket([]byte(bucketName))
+	if bucket == nil {
+		return nil, fmt.Errorf("failed to open task bucket %s", bucketName)
 	}
 	return bucket, nil
 }
 
 func (this *Model) getActiveTasksBucket(tx *bolt.Tx, jobId JobID) (*bolt.Bucket, error) {
-	bucketName := jobId + "-Active"
-	bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-	if err != nil {
-		glog.Error("failed to create task bucket", bucketName)
-		return nil, err
-	}
-	return bucket, nil
+	return this.getTasksBucket(tx, jobId, ACTIVE)
 }
 
 func (this *Model) getCompletedTasksBucket(tx *bolt.Tx, jobId JobID) (*bolt.Bucket, error) {
-	bucketName := jobId + "-Completed"
-	bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-	if err != nil {
-		glog.Error("failed to create task bucket", bucketName)
-		return nil, err
-	}
-	return bucket, nil
+	return this.getTasksBucket(tx, jobId, COMPLETED)
 }
 
 func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
@@ -175,7 +190,8 @@ func (this *Model) saveTask(bucket *bolt.Bucket, task *Task) error {
 		return err
 	}
 
-	err = bucket.Put([]byte(fmt.Sprintf("%0*d", TASK_KEY_LEN, task.Seq)), data)
+	key := fmt.Sprintf("%0*d", TASK_KEY_LEN, task.Seq)
+	err = bucket.Put([]byte(key), data)
 	if err != nil {
 		glog.Errorf("failed to put job %s task %s", task.Job, task.Seq)
 		return err
@@ -184,21 +200,43 @@ func (this *Model) saveTask(bucket *bolt.Bucket, task *Task) error {
 	return nil
 }
 
-func (this *Model) loadTask(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
-	jobBytes := bucket.Get([]byte(jobId))
-	if jobBytes == nil {
-		return nil, &ErrInvalidJob{jobId}
+func (this *Model) loadTask(bucket *bolt.Bucket, jobId JobID, seq int) (*Task, error) {
+	key := fmt.Sprintf("%0*d", TASK_KEY_LEN, seq)
+	taskBytes := bucket.Get([]byte(key))
+	if taskBytes == nil {
+		return nil, &ErrInvalidTask{jobId, seq}
 	}
 
-	job := &Job{}
-	err := job.FromBytes(jobBytes)
+	task := &Task{}
+	err := task.FromBytes(taskBytes)
 	if err != nil {
-		return nil, &ErrInternal{"failed to deserialize job " + string(jobId)}
+		return nil, &ErrInternal{fmt.Sprintf("failed to deserialize task %s:%s", jobId, seq)}
 	}
 
-	return job, nil
+	return task, nil
 }
 
+func (this *Model) loadTasks(tx *bolt.Tx, jobId JobID, which string) (TaskList, error) {
+	bucket, err := this.getTasksBucket(tx, jobId, which)
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make(TaskList, 0, 50) // TODO: better guess at initial capacity
+	err = bucket.ForEach(func(key, taskBytes []byte) error {
+		task := &Task{}
+		err = task.FromBytes(taskBytes)
+		if err != nil {
+			return err
+		}
+		tasks = append(tasks, task)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
 
 func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
 
@@ -208,6 +246,15 @@ func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
 	}
 
 	err = this.Db.Update(func(tx *bolt.Tx) error {
+
+		locs := []string{ACTIVE, COMPLETED}
+		for idx := range locs {
+			bucketName := this.getTasksBucketName(job.Id, locs[idx])
+			_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+			if err != nil {
+				return err
+			}
+		}
 
 		activeJobsBucket, err := this.getActiveJobsBucket(tx)
 		if err != nil {
@@ -308,18 +355,47 @@ func (this *Model) SetJobTimeout(jobId JobID, timeout time.Duration) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Timeout = timeout; return nil })
 }
 
-func getJob(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
-}
-
-func (this *Model) GetActiveJob(jobId JobID) (job *Job, error) {
-	err = this.Db.View(func(tx *bolt.Tx) error {
-		bucket, err := this.getActiveJobsBucket(tx)
+func (this *Model) getJob(jobId JobID, which string) (*Job, error) {
+	var job *Job
+	var activeTasks, completedTasks TaskList
+	err := this.Db.View(func(tx *bolt.Tx) error {
+		bucket, err := this.getJobsBucket(tx, which)
 		if err != nil {
 			return err
 		}
-		
-		job, err := this.getJob(bucket, jobId)
-		
+
+		job, err = this.loadJob(bucket, jobId)
+		if err != nil {
+			return err
+		}
+
+		activeTasks, err = this.loadTasks(tx, jobId, ACTIVE)
+		if err != nil {
+			return err
+		}
+
+		completedTasks, err = this.loadTasks(tx, jobId, COMPLETED)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	job.ActiveTasks = activeTasks
+	job.CompletedTasks = completedTasks
+	return job, nil
+}
+
+func (this *Model) GetActiveJob(jobId JobID) (*Job, error) {
+	return this.getJob(jobId, ACTIVE)
+}
+
+func (this *Model) GetCompletedJob(jobId JobID) (*Job, error) {
+	return this.getJob(jobId, COMPLETED)
 }
 
 /*

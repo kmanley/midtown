@@ -5,7 +5,7 @@ import (
 	_ "container/heap"
 	"encoding/gob"
 	_ "fmt"
-	"regexp"
+	_ "regexp"
 	"time"
 )
 
@@ -18,8 +18,8 @@ type JobControl struct {
 	StartTime              time.Time
 	ContinueJobOnTaskError bool
 	//RemoteCurDir            string
-	WorkerNameRegex         string
-	CompiledWorkerNameRegex *regexp.Regexp
+	WorkerNameRegex string
+	//CompiledWorkerNameRegex *regexp.Regexp
 	// TODO: consider OSRegex as well, to limit to Workers matching a particular OS/version
 	//ProcessPriority int
 	// TODO: later
@@ -121,14 +121,16 @@ func NewJob(jobId JobID, cmd string, description string, data []interface{}, ctx
 	}
 
 	// TODO: handle AssignSingleTaskPerWorker
-	if ctrl.WorkerNameRegex != "" {
-		r, err := regexp.Compile(ctrl.WorkerNameRegex)
-		if r == nil {
-			ctrl.CompiledWorkerNameRegex = r
-		} else {
-			return nil, err // TODO: handle error properly
+	/*
+		if ctrl.WorkerNameRegex != "" {
+			r, err := regexp.Compile(ctrl.WorkerNameRegex)
+			if r == nil {
+				ctrl.CompiledWorkerNameRegex = r
+			} else {
+				return nil, err // TODO: handle error properly
+			}
 		}
-	}
+	*/
 
 	newJob := &Job{Id: jobId, Cmd: cmd, Description: description, Ctx: ctx,
 		Ctrl: ctrl, Created: now}

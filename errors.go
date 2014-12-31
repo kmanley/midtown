@@ -13,6 +13,15 @@ func (this *ErrInvalidJob) Error() string {
 	return fmt.Sprintf("invalid job %s", this.jobId)
 }
 
+type ErrInvalidTask struct {
+	jobId JobID
+	seq   int
+}
+
+func (this *ErrInvalidTask) Error() string {
+	return fmt.Sprintf("invalid task %s:%d", this.jobId, this.seq)
+}
+
 type ErrInternal struct {
 	msg string
 }

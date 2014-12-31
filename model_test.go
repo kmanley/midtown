@@ -1,16 +1,21 @@
 package midtown
 
 import (
-	_ "fmt"
+	"fmt"
 	"os"
 	//	"github.com/kmanley/golang-grid"
+	"github.com/davecgh/go-spew/spew"
 	"testing"
 )
 
+const filename = "/tmp/midtown_test.db"
+
+func init() {
+	os.Remove(filename)
+}
+
 func getModel() *Model {
 	model := &Model{}
-	filename := "/tmp/midtown_test.db"
-	os.Remove(filename)
 	model.Init(filename, 0600)
 	return model
 }
@@ -23,7 +28,7 @@ func TestNewJobId(t *testing.T) {
 	//fmt.Println(job1)
 	//fmt.Println(job2)
 	if job1 == job2 {
-		t.Fail()
+		t.Errorf("got identical job ids %s and %s", job1, job2)
 	}
 }
 
@@ -37,9 +42,20 @@ func TestCreateJob(t *testing.T) {
 	jobdef := &JobDefinition{Cmd: "python.exe doit.py", Data: data,
 		Description: "my first job", Ctx: ctx, Ctrl: ctrl}
 	jobid, err := model.CreateJob(jobdef)
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Println("created job", jobid)
 
 	model.Close()
 	model = getModel()
+
+	job, err := model.GetActiveJob(jobid)
+	if err != nil {
+		t.Error(err)
+	}
+
+	spew.Dump(job)
 
 }
 
