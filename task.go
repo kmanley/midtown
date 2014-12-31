@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+/*
 const (
 	TASK_WAITING = iota
 	TASK_RUNNING
@@ -21,6 +22,7 @@ var TASK_STATES []string = []string{
 	"TASK_RUNNING",
 	"TASK_DONE_OK",
 	"TASK_DONE_ERR"}
+*/
 
 type Task struct {
 	Job      JobID
@@ -38,7 +40,8 @@ type Task struct {
 }
 
 type TaskList []*Task
-type TaskMap map[int]*Task
+
+//type TaskMap map[int]*Task
 
 func NewTask(jobID JobID, seq int, data interface{}) *Task {
 	// placeholder in case we need more initialization logic later
@@ -74,7 +77,7 @@ func (this *Task) start(worker *Worker) {
 	this.Error = nil
 	this.Stdout = ""
 	this.Stderr = ""
-	worker.assignTask(this)
+	worker.setTask(this)
 }
 
 func (this *Task) reset() {
@@ -101,6 +104,7 @@ func (this *Task) hasError() bool {
 	return this.Error != nil
 }
 
+/*
 func (this *Task) State() int {
 	started, finished := this.Started, this.Finished
 	if started.IsZero() {
@@ -122,6 +126,7 @@ func (this *Task) State() int {
 func (this *Task) StateString() string {
 	return TASK_STATES[this.State()]
 }
+*/
 
 /*
 // Returns current elapsed time for a running task. To get elapsed time

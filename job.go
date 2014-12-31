@@ -14,7 +14,7 @@ type Context map[string]string
 type JobID string
 
 type JobControl struct {
-	MaxConcurrency         int16
+	MaxConcurrency         int
 	StartTime              time.Time
 	ContinueJobOnTaskError bool
 	//RemoteCurDir            string
@@ -47,7 +47,7 @@ func (this *JobDefinition) String() string {
 		fmt.Sprintf("%+v", *this.Ctrl)
 }
 */
-
+/*
 const (
 	JOB_WAITING = iota
 	JOB_RUNNING
@@ -62,6 +62,7 @@ var JOB_STATES []string = []string{
 	"JOB_SUSPENDED",
 	"JOB_DONE_OK",
 	"JOB_DONE_ERR"}
+*/
 
 type Job struct {
 	Id          JobID
@@ -78,10 +79,11 @@ type Job struct {
 	Finished time.Time
 	//LastClientPoll time.Time
 	NumTasks int
-	// NOTE: ActiveTasks, CompletedTasks are never stored in bolt (tasks
+	// NOTE: IdleTasks, ActiveTasks, CompletedTasks are never stored in bolt (tasks
 	// are stored in separate buckets for performance). These fields are only
 	// filled out when returning a Job in the API
 	// are only filled by GetJob
+	IdleTasks      TaskList
 	ActiveTasks    TaskList
 	CompletedTasks TaskList
 	//IdleTasks      TaskHeap
@@ -89,6 +91,21 @@ type Job struct {
 	//CompletedTasks TaskMap
 	//HeapIndex      int
 	NumErrors int
+}
+
+type JobList []*Job
+
+type ByPriority JobList
+
+func (a ByPriority) Len() int      { return len(a) }
+func (a ByPriority) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByPriority) Less(i, j int) bool {
+	if a[i].Ctrl.Priority > a[j].Ctrl.Priority {
+		return true
+	} else if a[i].Ctrl.Priority == a[j].Ctrl.Priority {
+		return a[i].Created.Before(a[j].Created)
+	}
+	return false
 }
 
 func (this *Job) ToBytes() ([]byte, error) {

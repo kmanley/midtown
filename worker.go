@@ -3,6 +3,8 @@
 package midtown
 
 import (
+	"bytes"
+	"encoding/gob"
 	_ "fmt"
 	"time"
 )
@@ -25,8 +27,7 @@ func (this *WorkerStats) reset() {
 
 type Worker struct {
 	Name        string
-	CurrJob     JobID
-	CurrTask    int
+	CurrTask    *Task
 	Stats       WorkerStats
 	LastContact time.Time
 }
@@ -37,25 +38,36 @@ func NewWorker(name string) *Worker {
 	return &Worker{Name: name}
 }
 
+func (this *Worker) ToBytes() ([]byte, error) {
+	var buff bytes.Buffer
+	enc := gob.NewEncoder(&buff)
+	err := enc.Encode(this)
+	if err != nil {
+		return nil, err
+	}
+	return buff.Bytes(), nil
+}
+
+func (this *Worker) FromBytes(data []byte) error {
+	buff := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buff)
+	err := dec.Decode(this)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (this *Worker) String() string {
 	return this.Name
 }
 
-func (this *Worker) assignTask(task *Task) {
-	this.CurrJob = task.Job
-	this.CurrTask = task.Seq
-	//this.updateLastContact()
-}
-
-func (this *Worker) reset() {
-	this.CurrJob = ""
-	this.CurrTask = 0
-	// NOTE: we don't reset stats
-	//this.updateLastContact()
+func (this *Worker) setTask(task *Task) {
+	this.CurrTask = task
 }
 
 func (this *Worker) isWorking() bool {
-	return len(this.CurrJob) > 0
+	return this.CurrTask != nil
 }
 
 func (this *Worker) updateLastContact() {
