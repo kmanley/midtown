@@ -67,7 +67,7 @@ var TASK_KEY_LEN = len(fmt.Sprint(MAX_TASK_COUNT))
 
 type Model struct {
 	Db           *bolt.DB
-	Fifo         bool
+	Fifo         bool // TODO: consider persisting this setting in bolt
 	Workers      WorkerMap
 	Prng         *rand.Rand
 	LastJobID    JobID
@@ -75,6 +75,9 @@ type Model struct {
 }
 
 func (this *Model) Init(dbname string, mode os.FileMode) error {
+
+	this.Prng = rand.New(rand.NewSource(time.Now().Unix()))
+
 	db, err := bolt.Open(dbname, mode, nil)
 	if err != nil {
 		glog.Fatalf("failed to open db %s: %s", dbname, err)
@@ -245,7 +248,6 @@ func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
 	return nil
 }
 
-// Returns nil if job doesn't exist
 func (this *Model) loadJob(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
 	jobBytes := bucket.Get([]byte(jobId))
 	if jobBytes == nil {
@@ -395,38 +397,96 @@ func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
 	return job.Id, nil
 }
 
-//func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
+func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 
-//	err := this.Db.Update(func(tx *bolt.Tx) error {
+	var job *Job
+	var task *Task
+	err := this.Db.Update(func(tx *bolt.Tx) error {
 
-//		worker, err := this.getOrCreateWorker(tx, workerName)
-//		if err != nil {
-//			return err
-//		}
+		worker, err := this.getOrCreateWorker(tx, workerName)
+		if err != nil {
+			return err
+		}
 
-//		/* TODO:
-//		if worker.isWorking() {
-//			// Out of sync; we think this worker already has a task but it is requesting
-//			// a new one. We need to mark the task we thought that worker was working on
-//			// as idle so it gets picked up by a different worker.
-//			reallocateWorkerTask(worker)
-//		}
-//		*/
+		/* TODO:
+		if worker.isWorking() {
+			// Out of sync; we think this worker already has a task but it is requesting
+			// a new one. We need to mark the task we thought that worker was working on
+			// as idle so it gets picked up by a different worker.
+			reallocateWorkerTask(worker)
+		}
+		*/
 
-//		job := getJobForWorker(workerName)
-//		if job == nil {
-//			// no work available right now
-//			return nil
-//		}
-//		task := job.allocateTask(worker)
-//		ret := &WorkerTask{job.ID, task.Seq, job.Cmd, task.Indata, &job.Ctx}
-//		return ret
+		job, err = this.getJobForWorker(tx, workerName)
+		if job == nil {
+			// no work available right now
+			return nil
+		}
 
-// TODO: update task, job, worker in bolt
+		idleTasksBucket, err := this.getIdleTasksBucket(tx, job.Id)
+		if err != nil {
+			return err
+		}
 
-//	})
+		activeTasksBucket, err := this.getActiveTasksBucket(tx, job.Id)
+		if err != nil {
+			return err
+		}
 
-//}
+		cursor := idleTasksBucket.Cursor()
+		taskKey, taskBytes := cursor.First()
+		task = &Task{}
+		err = task.FromBytes(taskBytes)
+		if err != nil {
+			return err
+		}
+
+		task.start(worker)
+
+		// save task in the active bucket
+		err = this.saveTask(activeTasksBucket, task)
+		if err != nil {
+			return err
+		}
+
+		// remove it from the idle bucket
+		err = idleTasksBucket.Delete(taskKey)
+		if err != nil {
+			return err
+		}
+
+		err = this.saveWorker(tx, worker)
+		if err != nil {
+			return err
+		}
+
+		// if this is the first task started for a job, need to update the job too
+		if job.Started.IsZero() {
+			job.Started = time.Now()
+			activeJobsBucket, err := this.getActiveJobsBucket(tx)
+			if err != nil {
+				return err
+			}
+			err = this.saveJob(activeJobsBucket, job)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if job == nil || task == nil {
+		return nil, nil
+	}
+
+	ret := NewWorkerTask(job.Id, task.Seq, job.Cmd, task.Indata, job.Ctx)
+	return ret, nil
+}
 
 func (this *Model) getJobForWorker(tx *bolt.Tx, workerName string) (*Job, error) {
 	now := time.Now()
@@ -438,6 +498,12 @@ func (this *Model) getJobForWorker(tx *bolt.Tx, workerName string) (*Job, error)
 	}
 
 	for _, job := range activeJobs {
+
+		if len(candidates) > 0 && (job.Ctrl.Priority < candidates[0].Ctrl.Priority) {
+			// there are already higher priority candidates so no point in considering this
+			// job or any others that will follow
+			break
+		}
 
 		// TODO: consider best order of the following clauses for performance
 		// TODO: add support for hidden workers?
@@ -479,11 +545,6 @@ func (this *Model) getJobForWorker(tx *bolt.Tx, workerName string) (*Job, error)
 		//	continue
 		//}
 
-		if len(candidates) > 0 && (job.Ctrl.Priority != candidates[0].Ctrl.Priority) {
-			// there are already higher priority candidates so no point in considering this
-			// job or any others that will follow
-			break
-		}
 		// if we got this far, then this job is a candidate for selection
 		candidates = append(candidates, job)
 	}
@@ -566,7 +627,6 @@ func (this *Model) SetJobTimeout(jobId JobID, timeout time.Duration) error {
 
 func (this *Model) getJob(jobId JobID, which string) (*Job, error) {
 	var job *Job
-	var activeTasks, completedTasks TaskList
 	err := this.Db.View(func(tx *bolt.Tx) error {
 		bucket, err := this.getJobsBucket(tx, which)
 		if err != nil {
@@ -590,8 +650,6 @@ func (this *Model) getJob(jobId JobID, which string) (*Job, error) {
 		return nil, err
 	}
 
-	job.ActiveTasks = activeTasks
-	job.CompletedTasks = completedTasks
 	return job, nil
 }
 

@@ -155,3 +155,8 @@ type WorkerTask struct {
 	Data interface{}
 	Ctx  *Context
 }
+
+func NewWorkerTask(jobId JobID, seq int, cmd string, data interface{}, ctx *Context) *WorkerTask {
+	// placeholder in case we need more initialization logic later
+	return &WorkerTask{jobId, seq, cmd, data, ctx}
+}

@@ -57,6 +57,24 @@ func TestCreateJob(t *testing.T) {
 
 	spew.Dump(job)
 
+	fmt.Println("------------------------------------------------")
+	workerTask, err := model.GetWorkerTask("worker1")
+	if err != nil {
+		t.Error(err)
+	}
+
+	spew.Dump(workerTask)
+
+	fmt.Println("*************************************************")
+
+	model.Close()
+	model = getModel()
+	job, err = model.GetActiveJob(jobid)
+	if err != nil {
+		t.Error(err)
+	}
+	spew.Dump(job)
+
 }
 
 /*

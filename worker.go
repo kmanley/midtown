@@ -28,7 +28,7 @@ func (this *WorkerStats) reset() {
 type Worker struct {
 	Name        string
 	CurrTask    *Task
-	Stats       WorkerStats
+	Stats       *WorkerStats
 	LastContact time.Time
 }
 
