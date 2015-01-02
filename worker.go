@@ -32,7 +32,7 @@ type Worker struct {
 	LastContact time.Time
 }
 
-type WorkerMap map[string]*Worker
+type WorkerList []*Worker
 
 func NewWorker(name string) *Worker {
 	return &Worker{Name: name}

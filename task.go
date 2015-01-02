@@ -95,14 +95,14 @@ func (this *Task) finish(result interface{}, stdout string, stderr string, err e
 	this.Outdata = result
 	this.Finished = now
 	// leave this.Worker alone so there's a record of which worker did the task
-	this.Error = err
 	this.Stdout = stdout
 	this.Stderr = stderr
+	this.Error = err
 }
 
-func (this *Task) hasError() bool {
-	return this.Error != nil
-}
+//func (this *Task) hasError() bool {
+//	return this.Error != nil
+//}
 
 /*
 func (this *Task) State() int {

@@ -79,18 +79,17 @@ type Job struct {
 	Finished time.Time
 	//LastClientPoll time.Time
 	NumTasks int
+	Error    error
 	// NOTE: IdleTasks, ActiveTasks, CompletedTasks are never stored in bolt (tasks
 	// are stored in separate buckets for performance). These fields are only
 	// filled out when returning a Job in the API
 	// are only filled by GetJob
-	IdleTasks      TaskList
-	ActiveTasks    TaskList
-	CompletedTasks TaskList
-	//IdleTasks      TaskHeap
-	//RunningTasks   TaskMap
-	//CompletedTasks TaskMap
-	//HeapIndex      int
-	NumErrors int
+	IdleTasks    TaskList
+	ActiveTasks  TaskList
+	DoneOkTasks  TaskList
+	DoneErrTasks TaskList
+	// TODO: ErrorTasks TaskList
+
 }
 
 type JobList []*Job

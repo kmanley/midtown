@@ -50,7 +50,7 @@ func TestCreateJob(t *testing.T) {
 	model.Close()
 	model = getModel()
 
-	job, err := model.GetActiveJob(jobid)
+	job, err := model.GetJob(jobid, ACTIVE)
 	if err != nil {
 		t.Error(err)
 	}
@@ -58,22 +58,36 @@ func TestCreateJob(t *testing.T) {
 	spew.Dump(job)
 
 	fmt.Println("------------------------------------------------")
+
 	workerTask, err := model.GetWorkerTask("worker1")
 	if err != nil {
 		t.Error(err)
 	}
+	spew.Dump(workerTask)
 
+	workerTask, err = model.GetWorkerTask("worker2")
+	if err != nil {
+		t.Error(err)
+	}
 	spew.Dump(workerTask)
 
 	fmt.Println("*************************************************")
 
 	model.Close()
 	model = getModel()
-	job, err = model.GetActiveJob(jobid)
+	job, err = model.GetJob(jobid, ACTIVE)
 	if err != nil {
 		t.Error(err)
 	}
 	spew.Dump(job)
+
+	fmt.Println("**************************************************")
+	workers, _ := model.GetWorkers()
+	spew.Dump(workers)
+	for _, worker := range workers {
+		fmt.Printf("%#v", worker)
+		fmt.Println()
+	}
 
 }
 
