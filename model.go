@@ -151,7 +151,7 @@ func (this *Model) getOrCreateWorker(tx *bolt.Tx, name string) (*Worker, error) 
 	if workerBytes == nil {
 		worker = NewWorker(name)
 	} else {
-		worker := &Worker{}
+		worker = &Worker{}
 		err := worker.FromBytes(workerBytes)
 		if err != nil {
 			return nil, &ErrInternal{"failed to deserialize worker " + string(name)}
@@ -183,9 +183,6 @@ func (this *Model) saveWorker(tx *bolt.Tx, worker *Worker) error {
 		return err
 	}
 
-	fmt.Println("saved worker!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-	fmt.Printf("%#v", worker)
-	fmt.Println()
 	return nil
 }
 
@@ -196,14 +193,11 @@ func (this *Model) loadWorkers(tx *bolt.Tx, workers *WorkerList) error {
 		return fmt.Errorf("failed to open Workers bucket")
 	}
 	err := bucket.ForEach(func(key, workerBytes []byte) error {
-		fmt.Println("for each !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 		worker := &Worker{}
 		err := worker.FromBytes(workerBytes)
 		if err != nil {
 			return err
 		}
-		fmt.Println("added a worker")
-		fmt.Println(worker)
 		*workers = append(*workers, worker)
 		return nil
 	})
@@ -211,7 +205,6 @@ func (this *Model) loadWorkers(tx *bolt.Tx, workers *WorkerList) error {
 		return err
 	}
 
-	fmt.Println("worker len is ", len(*workers))
 	return nil
 }
 
@@ -239,16 +232,6 @@ func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error
 	return bucket, nil
 }
 
-/*
-func (this *Model) getActiveJobsBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
-	return this.getJobsBucket(tx, ACTIVE)
-}
-
-func (this *Model) getCompletedJobsBucket(tx *bolt.Tx) (*bolt.Bucket, error) {
-	return this.getJobsBucket(tx, COMPLETED)
-}
-*/
-
 func (this *Model) getTasksBucket(tx *bolt.Tx, jobId JobID, which string) (*bolt.Bucket, error) {
 	bucket := tx.Bucket([]byte(jobId))
 	if bucket == nil {
@@ -270,20 +253,6 @@ func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId JobID, which string) (
 	return stats.KeyN, nil
 }
 
-/*
-func (this *Model) getIdleTasksBucket(tx *bolt.Tx, jobId JobID) (*bolt.Bucket, error) {
-	return this.getTasksBucket(tx, jobId, IDLE)
-}
-
-func (this *Model) getActiveTasksBucket(tx *bolt.Tx, jobId JobID) (*bolt.Bucket, error) {
-	return this.getTasksBucket(tx, jobId, ACTIVE)
-}
-
-func (this *Model) getCompletedTasksBucket(tx *bolt.Tx, jobId JobID) (*bolt.Bucket, error) {
-	return this.getTasksBucket(tx, jobId, COMPLETED)
-}
-*/
-
 func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
 	data, err := job.ToBytes()
 	if err != nil {
@@ -298,6 +267,11 @@ func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
 	}
 
 	return nil
+}
+
+func (this *Model) deleteJob(bucket *bolt.Bucket, job *Job) error {
+	err := bucket.Delete([]byte(job.Id))
+	return err
 }
 
 func (this *Model) loadJob(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
@@ -318,7 +292,7 @@ func (this *Model) loadJob(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
 func (this *Model) saveTask(bucket *bolt.Bucket, task *Task) error {
 	data, err := task.ToBytes()
 	if err != nil {
-		glog.Error("failed to serialize task", task.Job, task.Seq, err)
+		glog.Error("failed to serialize task ", task.Job, task.Seq, err)
 		return err
 	}
 
@@ -684,19 +658,8 @@ func (this *Model) GetJob(jobId JobID, which string) (*Job, error) {
 	return job, nil
 }
 
-/*
-func (this *Model) GetActiveJob(jobId JobID) (*Job, error) {
-	return this.getJob(jobId, ACTIVE)
-}
-
-func (this *Model) GetCompletedJob(jobId JobID) (*Job, error) {
-	return this.getJob(jobId, COMPLETED)
-}
-*/
-
-/*
 func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, result interface{},
-					stdout string, stderr string, taskError error) error {
+	stdout string, stderr string, taskError error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
 
@@ -705,17 +668,12 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 			return err
 		}
 
-		activeJobsBucket, err := this.getActiveJobsBucket(tx)
+		activeJobsBucket, err := this.getJobsBucket(tx, ACTIVE)
 		if err != nil {
 			return err
 		}
 
-		activeTasksBucket, err := this.getActiveTasksBucket(tx, jobId)
-		if err != nil {
-			return err
-		}
-
-		completedTasksBucket, err := this.getCompletedTasksBucket(tx, jobId)
+		activeTasksBucket, err := this.getTasksBucket(tx, jobId, ACTIVE)
 		if err != nil {
 			return err
 		}
@@ -744,13 +702,23 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 		//job.setTaskDone(worker, task, result, stdout, stderr, taskError)
 		task.finish(result, stdout, stderr, taskError)
 
-		// save task in completed bucket
-		err = this.saveTask(completedTasksBucket, task)
+		taskSaveBucketName := DONE_OK
+		if taskError != nil {
+			taskSaveBucketName = DONE_ERR
+		}
+
+		taskSaveBucket, err := this.getTasksBucket(tx, jobId, taskSaveBucketName)
 		if err != nil {
 			return err
 		}
 
-		// and remove from active bucket
+		// save the task in the new bucket...
+		err = this.saveTask(taskSaveBucket, task)
+		if err != nil {
+			return err
+		}
+
+		// ...and remove the task from active bucket
 		err = this.deleteTask(activeTasksBucket, task)
 		if err != nil {
 			return err
@@ -766,16 +734,59 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 		// if job is done, we need to update it too. The job is done if either all of
 		// its tasks are done, or a task is marked in error and the job is set to fail
 		// on first error
-		numCompleted, err := this.getNumTasksInBucket(tx, jobId, COMPLETED) // TODO: DoneOK, DoneError
+		numDoneOK, err := this.getNumTasksInBucket(tx, jobId, DONE_OK)
 		if err != nil {
 			return err
 		}
 
-		if (numCompleted == job.NumTasks) || taskError != nil &&
+		numDoneErr, err := this.getNumTasksInBucket(tx, jobId, DONE_ERR)
+		if err != nil {
+			return err
+		}
 
-		//if (len(this.CompletedTasks) == this.NumTasks) || (this.NumErrors > 0 && !this.Ctrl.ContinueJobOnTaskError) {
-		//	this.Finished = now
-		//}
+		if ((numDoneOK + numDoneErr) == job.NumTasks) || (taskError != nil && job.Ctrl.ContinueJobOnTaskError == false) {
+			now := time.Now()
+			job.Finished = now
+			if taskError != nil {
+				job.Error = (&ErrOneOrMoreTasksFailed{}).Error()
+
+				// if job is ending early because of a task error, cancel remaining tasks
+				bucketNames := []string{IDLE, ACTIVE}
+				for _, bucketName := range bucketNames {
+					bucket, err := this.getTasksBucket(tx, jobId, bucketName)
+					if err != nil {
+						return err
+					}
+					cursor := bucket.Cursor()
+					for taskSeq, taskBytes := cursor.First(); taskSeq != nil; taskSeq, taskBytes = cursor.Next() {
+						pendingTask := &Task{}
+						err = pendingTask.FromBytes(taskBytes)
+						if err != nil {
+							return &ErrInternal{fmt.Sprintf("failed to deserialize pending task %s:%s", jobId, taskSeq)}
+						}
+						pendingTask.finish(nil, "", "", &ErrTaskCanceled{})
+						err = this.saveTask(taskSaveBucket, pendingTask)
+						if err != nil {
+							return err
+						}
+						cursor.Delete() // remove from pending task bucket
+					}
+				}
+			}
+			completedJobsBucket, err := this.getJobsBucket(tx, COMPLETED)
+			if err != nil {
+				return err
+			}
+			err = this.saveJob(completedJobsBucket, job)
+			if err != nil {
+				return err
+			}
+			err = this.deleteJob(activeJobsBucket, job)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 
 	})
 
@@ -785,7 +796,6 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 
 	return nil
 }
-*/
 
 /*
 

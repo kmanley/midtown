@@ -32,7 +32,7 @@ type Task struct {
 	Started  time.Time
 	Finished time.Time
 	Worker   string
-	Error    error
+	Error    string
 	// TODO: later
 	//ExcludedWorkers map[string]bool
 	Stdout string
@@ -74,7 +74,7 @@ func (this *Task) start(worker *Worker) {
 	this.Started = now
 	this.Finished = *new(time.Time)
 	this.Worker = worker.Name
-	this.Error = nil
+	this.Error = ""
 	this.Stdout = ""
 	this.Stderr = ""
 	worker.setTask(this)
@@ -85,7 +85,7 @@ func (this *Task) reset() {
 	this.Started = *new(time.Time)
 	this.Finished = *new(time.Time)
 	this.Worker = ""
-	this.Error = nil
+	this.Error = ""
 	this.Stdout = ""
 	this.Stderr = ""
 }
@@ -97,7 +97,9 @@ func (this *Task) finish(result interface{}, stdout string, stderr string, err e
 	// leave this.Worker alone so there's a record of which worker did the task
 	this.Stdout = stdout
 	this.Stderr = stderr
-	this.Error = err
+	if err != nil {
+		this.Error = err.Error()
+	}
 }
 
 //func (this *Task) hasError() bool {

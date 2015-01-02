@@ -58,9 +58,9 @@ func (this *Worker) FromBytes(data []byte) error {
 	return nil
 }
 
-func (this *Worker) String() string {
-	return this.Name
-}
+//func (this *Worker) String() string {
+//	return this.Name
+//}
 
 func (this *Worker) setTask(task *Task) {
 	this.CurrTask = task

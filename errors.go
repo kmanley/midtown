@@ -38,6 +38,20 @@ func (this *ErrInternal) Error() string {
 	return fmt.Sprintf("internal error: %s", this.msg)
 }
 
+type ErrOneOrMoreTasksFailed struct {
+}
+
+func (this *ErrOneOrMoreTasksFailed) Error() string {
+	return "One or more tasks failed"
+}
+
+type ErrTaskCanceled struct {
+}
+
+func (this *ErrTaskCanceled) Error() string {
+	return "Task canceled"
+}
+
 /*
 // TODO: create custom error struct to include extra data
 var ERR_INVALID_JOB_ID = errors.New("invalid job id")

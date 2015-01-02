@@ -1,6 +1,7 @@
 package midtown
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	//	"github.com/kmanley/golang-grid"
@@ -59,17 +60,17 @@ func TestCreateJob(t *testing.T) {
 
 	fmt.Println("------------------------------------------------")
 
-	workerTask, err := model.GetWorkerTask("worker1")
+	workerTask1, err := model.GetWorkerTask("worker1")
 	if err != nil {
 		t.Error(err)
 	}
-	spew.Dump(workerTask)
+	spew.Dump(workerTask1)
 
-	workerTask, err = model.GetWorkerTask("worker2")
+	workerTask2, err := model.GetWorkerTask("worker2")
 	if err != nil {
 		t.Error(err)
 	}
-	spew.Dump(workerTask)
+	spew.Dump(workerTask2)
 
 	fmt.Println("*************************************************")
 
@@ -84,10 +85,23 @@ func TestCreateJob(t *testing.T) {
 	fmt.Println("**************************************************")
 	workers, _ := model.GetWorkers()
 	spew.Dump(workers)
-	for _, worker := range workers {
-		fmt.Printf("%#v", worker)
-		fmt.Println()
+
+	model.SetTaskDone("worker2", workerTask2.Job, workerTask2.Seq, 200, "stdout2", "stderr2", nil)
+	model.SetTaskDone("worker1", workerTask1.Job, workerTask1.Seq, 100, "stdout1", "stderr1", errors.New("oh dear"))
+
+	fmt.Println("*** after settaskdone ***********************************************")
+	model.Close()
+	model = getModel()
+	job, err = model.GetJob(jobid, ACTIVE)
+	if err == nil {
+		t.Error("expected to not find job in active list")
 	}
+
+	job, err = model.GetJob(jobid, COMPLETED)
+	if err != nil {
+		t.Error(err)
+	}
+	spew.Dump(job)
 
 }
 
