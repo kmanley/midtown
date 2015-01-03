@@ -40,11 +40,10 @@ func (this *WorkerApi) SetTaskDone(result *TaskResult, reserved *int) error {
 	return err
 }
 
-// TODO: port e.g. ":9999"
-func StartWorkerAPI(model *Model, port string, wg *sync.WaitGroup) {
+func StartWorkerApi(model *Model, port int, wg *sync.WaitGroup) {
 	rpc.Register(NewWorkerApi(model))
-	glog.Infof("serving worker API on %s", port)
-	ln, err := net.Listen("tcp", port)
+	glog.Infof("serving worker API on %d", port)
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port)) // TODO: allow specifying iface to bind to
 	if err != nil {
 		fmt.Println(err)
 		return

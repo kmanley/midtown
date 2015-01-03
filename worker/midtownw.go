@@ -32,8 +32,8 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) {
 func main() {
 	flag.Parse()
 	dest := "127.0.0.1" // TODO: cmdline
-	port := "9999"      // TODO: cmdline
-	distributor := fmt.Sprintf("%s:%s", dest, port)
+	port := 9998        // TODO: cmdline
+	distributor := fmt.Sprintf("%s:%d", dest, port)
 	conn, err := rpc.Dial("tcp", distributor)
 	if err != nil {
 		// TODO:
