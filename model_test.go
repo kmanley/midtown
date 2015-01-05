@@ -1,7 +1,7 @@
 package midtown
 
 import (
-	"errors"
+	//	"errors"
 	"fmt"
 	"os"
 	//	"github.com/kmanley/golang-grid"
@@ -87,7 +87,7 @@ func TestCreateJob(t *testing.T) {
 	spew.Dump(workers)
 
 	model.SetTaskDone("worker2", workerTask2.Job, workerTask2.Seq, 200, "stdout2", "stderr2", nil)
-	model.SetTaskDone("worker1", workerTask1.Job, workerTask1.Seq, 100, "stdout1", "stderr1", errors.New("oh dear"))
+	model.SetTaskDone("worker1", workerTask1.Job, workerTask1.Seq, 100, "stdout1", "stderr1", &ErrTest{})
 
 	fmt.Println("*** after settaskdone ***********************************************")
 	model.Close()
@@ -97,6 +97,10 @@ func TestCreateJob(t *testing.T) {
 		t.Error("expected to not find job in active list")
 	}
 
+	fmt.Println("*** active job wtf")
+	spew.Dump(job)
+
+	fmt.Println("*** completed job")
 	job, err = model.GetJob(jobid, COMPLETED)
 	if err != nil {
 		t.Error(err)

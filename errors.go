@@ -1,9 +1,20 @@
 package midtown
 
 import (
-	_ "errors"
+	"errors"
 	"fmt"
 )
+
+/*
+type Err struct {
+	code int
+	msg  string
+}
+
+func (this *Err) Error() string {
+	return msg
+}
+*/
 
 type ErrInvalidJob struct {
 	jobId JobID
@@ -11,6 +22,14 @@ type ErrInvalidJob struct {
 
 func (this *ErrInvalidJob) Error() string {
 	return fmt.Sprintf("invalid job %s", this.jobId)
+}
+
+type ErrJobNotFinished struct {
+	jobId JobID
+}
+
+func (this *ErrJobNotFinished) Error() string {
+	return fmt.Sprintf("job %s hasn't finished", this.jobId)
 }
 
 type ErrInvalidTask struct {
@@ -38,19 +57,10 @@ func (this *ErrInternal) Error() string {
 	return fmt.Sprintf("internal error: %s", this.msg)
 }
 
-type ErrOneOrMoreTasksFailed struct {
-}
-
-func (this *ErrOneOrMoreTasksFailed) Error() string {
-	return "One or more tasks failed"
-}
-
-type ErrTaskCanceled struct {
-}
-
-func (this *ErrTaskCanceled) Error() string {
-	return "Task canceled"
-}
+var (
+	ErrOneOrMoreTasksFailed = errors.New("One or more tasks failed")
+	ErrTaskCanceled         = errors.New("Task canceled")
+)
 
 /*
 // TODO: create custom error struct to include extra data

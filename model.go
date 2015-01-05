@@ -53,6 +53,7 @@ import (
 	"math/rand"
 	"strings"
 	//"sync"
+	"errors"
 	"sort"
 	"time"
 )
@@ -249,8 +250,15 @@ func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId JobID, which string) (
 	if err != nil {
 		return 0, err
 	}
-	stats := bucket.Stats()
-	return stats.KeyN, nil
+	ctr := 0
+	err = bucket.ForEach(func(_, _ []byte) error {
+		ctr += 1
+		return nil
+	})
+	return ctr, nil
+	// TODO: use Stats again after bug is fixed
+	// stats := bucket.Stats()
+	// return stats.KeyN, nil
 }
 
 func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
@@ -658,6 +666,37 @@ func (this *Model) GetJob(jobId JobID, which string) (*Job, error) {
 	return job, nil
 }
 
+func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId JobID) error {
+	taskSaveBucket, err := this.getTasksBucket(tx, jobId, DONE_ERR)
+	if err != nil {
+		return err
+	}
+	bucketNames := []string{IDLE, ACTIVE}
+	for _, bucketName := range bucketNames {
+		bucket, err := this.getTasksBucket(tx, jobId, bucketName)
+		if err != nil {
+			return err
+		}
+		cursor := bucket.Cursor()
+		for taskSeq, taskBytes := cursor.First(); taskSeq != nil; taskSeq, taskBytes = cursor.Next() {
+			pendingTask := &Task{}
+			err = pendingTask.FromBytes(taskBytes)
+			if err != nil {
+				return &ErrInternal{fmt.Sprintf("failed to deserialize pending task %s:%s", jobId, taskSeq)}
+			}
+			pendingTask.finish(nil, "", "", ErrTaskCanceled)
+			err = this.saveTask(taskSaveBucket, pendingTask)
+			if err != nil {
+				return err
+			}
+			cursor.Delete() // remove from pending task bucket
+		}
+	}
+	return nil
+}
+
+// TODO: when testing, make sure job state is correct whether 1st task or nth task is in error
+// and whether ContinueJobOnTaskError is set or not
 func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, result interface{},
 	stdout string, stderr string, taskError error) error {
 
@@ -731,6 +770,15 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 			return err
 		}
 
+		// if this task failed and the job isn't configured to continue on
+		// task errors then cancel all idle and active tasks
+		if taskError != nil && job.Ctrl.ContinueJobOnTaskError == false {
+			err = this.cancelPendingTasks(tx, jobId)
+			if err != nil {
+				return err
+			}
+		}
+
 		// if job is done, we need to update it too. The job is done if either all of
 		// its tasks are done, or a task is marked in error and the job is set to fail
 		// on first error
@@ -744,35 +792,14 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 			return err
 		}
 
-		if ((numDoneOK + numDoneErr) == job.NumTasks) || (taskError != nil && job.Ctrl.ContinueJobOnTaskError == false) {
+		fmt.Println("doneok=%d, doneerr=%d", numDoneOK, numDoneErr) // TODO:
+		if (numDoneOK + numDoneErr) == job.NumTasks {
 			now := time.Now()
 			job.Finished = now
-			if taskError != nil {
-				job.Error = (&ErrOneOrMoreTasksFailed{}).Error()
-
-				// if job is ending early because of a task error, cancel remaining tasks
-				bucketNames := []string{IDLE, ACTIVE}
-				for _, bucketName := range bucketNames {
-					bucket, err := this.getTasksBucket(tx, jobId, bucketName)
-					if err != nil {
-						return err
-					}
-					cursor := bucket.Cursor()
-					for taskSeq, taskBytes := cursor.First(); taskSeq != nil; taskSeq, taskBytes = cursor.Next() {
-						pendingTask := &Task{}
-						err = pendingTask.FromBytes(taskBytes)
-						if err != nil {
-							return &ErrInternal{fmt.Sprintf("failed to deserialize pending task %s:%s", jobId, taskSeq)}
-						}
-						pendingTask.finish(nil, "", "", &ErrTaskCanceled{})
-						err = this.saveTask(taskSaveBucket, pendingTask)
-						if err != nil {
-							return err
-						}
-						cursor.Delete() // remove from pending task bucket
-					}
-				}
+			if numDoneErr > 0 {
+				job.Error = ErrOneOrMoreTasksFailed.Error()
 			}
+
 			completedJobsBucket, err := this.getJobsBucket(tx, COMPLETED)
 			if err != nil {
 				return err
@@ -796,6 +823,95 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 
 	return nil
 }
+
+// Looks for an active job, if not found looks for a completed job.
+func (this *Model) findJob(tx *bolt.Tx, jobId JobID) (*Job, error) {
+	var job *Job
+	// this function can be called on either an active or completed
+	// job so we have to check both buckets
+	locs := []string{ACTIVE, COMPLETED}
+	for _, loc := range locs {
+		bucket, err := this.getJobsBucket(tx, loc)
+		if err != nil {
+			return nil, err
+		}
+
+		job, err = this.loadJob(bucket, jobId)
+		if err == nil {
+			// found it!
+			break
+		}
+	}
+	if job == nil {
+		return nil, &ErrInvalidJob{jobId}
+	} else {
+		return job, nil
+	}
+}
+
+// Gets job result data; this only works on jobs that are completed without errors.
+// To get partial results for a running job, call GetPartialJobResult
+// To get full info for jobs including which tasks failed, call GetJob
+func (this *Model) GetJobResult(jobId JobID) ([]interface{}, error) {
+	var res []interface{}
+	err := this.Db.View(func(tx *bolt.Tx) error {
+		job, err := this.findJob(tx, jobId)
+		if err != nil {
+			return err
+		}
+		// job is either done ok, done with error(s), or still running
+		if job.Finished.IsZero() {
+			return &ErrJobNotFinished{jobId}
+		} else if job.Error != "" {
+			return errors.New(job.Error)
+		} else {
+			// all tasks must be in DONE_OK bucket; TODO: assert this
+			// they should also already be sorted by seq since bolt sorts by key
+			tasks := make(TaskList, 0, job.NumTasks)
+			err = this.loadTasks(tx, jobId, DONE_OK, &tasks)
+			if err != nil {
+				return err
+			}
+			res = make([]interface{}, 0, job.NumTasks)
+			for i, task := range tasks {
+				res[i] = task.Outdata
+			}
+			return nil
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+
+}
+
+// TODO: func (this *Model) GetPartialJobResult(jobID JobID, taskSeqs []int) ([]interface{}, error)
+// this can be used by client to do async result fetching, by passing in ids of tasks not yet
+// seen.
+
+// TODO: func (this *Model) GetJobInfo(jobID JobID)
+
+/*
+	job, err := getJob(jobID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	state := job.State()
+	switch state {
+	case JOB_WAITING, JOB_RUNNING, JOB_SUSPENDED:
+		return nil, &JobNotFinished{State: state, PctComplete: job.percentComplete()}
+	case JOB_CANCELLED, JOB_DONE_ERR:
+		// TODO: support GetJobErrors() for the error case
+		return nil, &ErrorJobFailed{State: state, Reason: job.getFailureReason()}
+	default:
+		res := job.getResult()
+		return res, nil
+	}
+*/
+//}
 
 /*
 
@@ -852,38 +968,6 @@ func reallocateWorkerTask(worker *Worker) {
 	}
 	fmt.Println(fmt.Sprintf("reallocating %s task %s %d", worker, worker.CurrJob, worker.CurrTask)) // TODO: proper logging
 	job.reallocateWorkerTask(worker)
-}
-
-func SetTaskDone(workerName string, jobID JobID, taskSeq int, result interface{},
-	stdout string, stderr string, taskError error) error {
-	Model.Mutex.Lock()
-	defer Model.Mutex.Unlock()
-
-	worker := getOrCreateWorker(workerName)
-	if !(worker.CurrJob == jobID && worker.CurrTask == taskSeq) {
-		// Out of sync; the worker is reporting a result for a different job/task to
-		// what we think it's working on. Our view is the truth so we reallocate the
-		// job we thought the worker was working on and reject its result.
-		// TODO: logging
-		reallocateWorkerTask(worker)
-		// Ignore the error; the worker will request a new task and get back in sync
-		return nil
-	}
-
-	job, err := getJob(jobID, true)
-	if err != nil {
-		return err
-	}
-
-	task := job.getRunningTask(taskSeq)
-	if task == nil {
-		// TODO: logging
-		return ERR_TASK_NOT_RUNNING
-	}
-
-	job.setTaskDone(worker, task, result, stdout, stderr, taskError)
-
-	return nil
 }
 
 func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {

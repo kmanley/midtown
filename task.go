@@ -99,6 +99,8 @@ func (this *Task) finish(result interface{}, stdout string, stderr string, err e
 	this.Stderr = stderr
 	if err != nil {
 		this.Error = err.Error()
+	} else {
+		this.Error = ""
 	}
 }
 
