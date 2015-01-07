@@ -51,7 +51,7 @@ func _TestJobFail(t *testing.T) {
 	model.Close()
 	model = getModel()
 
-	job, err := model.GetJob(jobid, ACTIVE)
+	job, err := model.GetJob(jobid)
 	if err != nil {
 		t.Error(err)
 	}
@@ -76,7 +76,7 @@ func _TestJobFail(t *testing.T) {
 
 	model.Close()
 	model = getModel()
-	job, err = model.GetJob(jobid, ACTIVE)
+	job, err = model.GetJob(jobid)
 	if err != nil {
 		t.Error(err)
 	}
@@ -92,7 +92,7 @@ func _TestJobFail(t *testing.T) {
 	fmt.Println("*** after settaskdone ***********************************************")
 	model.Close()
 	model = getModel()
-	job, err = model.GetJob(jobid, ACTIVE)
+	job, err = model.GetJob(jobid)
 	if err == nil {
 		t.Error("expected to not find job in active list")
 	}
@@ -101,7 +101,7 @@ func _TestJobFail(t *testing.T) {
 	spew.Dump(job)
 
 	fmt.Println("*** completed job")
-	job, err = model.GetJob(jobid, COMPLETED)
+	job, err = model.GetJob(jobid)
 	if err != nil {
 		t.Error(err)
 	}
@@ -119,6 +119,7 @@ func TestJobOK(t *testing.T) {
 	jobdef := &JobDefinition{Cmd: "python.exe doit.py", Data: data,
 		Description: "my first job", Ctx: ctx, Ctrl: ctrl}
 	jobid, err := model.CreateJob(jobdef)
+	fmt.Println("jobid", jobid)
 	assertnil(t, err)
 
 	model.Close()

@@ -637,17 +637,25 @@ func (this *Model) SetJobTimeout(jobId JobID, timeout time.Duration) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Timeout = timeout; return nil })
 }
 
-func (this *Model) GetJob(jobId JobID, which string) (*Job, error) {
+func (this *Model) GetJob(jobId JobID) (*Job, error) {
 	var job *Job
 	err := this.Db.View(func(tx *bolt.Tx) error {
-		bucket, err := this.getJobsBucket(tx, which)
-		if err != nil {
-			return err
+
+		locs := []string{ACTIVE, COMPLETED}
+		for _, loc := range locs {
+			bucket, err := this.getJobsBucket(tx, loc)
+			if err != nil {
+				return err
+			}
+
+			job, err = this.loadJob(bucket, jobId)
+			if err == nil {
+				break
+			}
 		}
 
-		job, err = this.loadJob(bucket, jobId)
-		if err != nil {
-			return err
+		if job == nil {
+			return &ErrInvalidJob{jobId}
 		}
 
 		/*
@@ -658,9 +666,12 @@ func (this *Model) GetJob(jobId JobID, which string) (*Job, error) {
 				err = this.loadTasks(tx, jobId, locs[idx], taskLists[idx])
 			}
 		*/
-		locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
+		locs = []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
 		for idx := range locs {
-			err = this.loadTasks(tx, jobId, locs[idx], &(job.Tasks))
+			err := this.loadTasks(tx, jobId, locs[idx], &(job.Tasks))
+			if err != nil {
+				return err
+			}
 		}
 		sort.Sort(BySequence(job.Tasks))
 

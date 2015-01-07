@@ -17,7 +17,8 @@ var App Distributor
 func main() {
 
 	flag.Parse()
-	dbname := "midtownd.db" // TODO: cmdline
+	//dbname := "midtownd.db" // TODO: cmdline
+	dbname := "/tmp/midtown_test.db" // TODO:
 	clientApiPort := 9997
 	workerApiPort := 9998 // TODO: cmdline
 	App.model = &midtown.Model{}
