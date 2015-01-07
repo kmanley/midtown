@@ -84,10 +84,11 @@ type Job struct {
 	// are stored in separate buckets for performance). These fields are only
 	// filled out when returning a Job in the API
 	// are only filled by GetJob
-	IdleTasks    TaskList
-	ActiveTasks  TaskList
-	DoneOkTasks  TaskList
-	DoneErrTasks TaskList
+	//IdleTasks    TaskList
+	//ActiveTasks  TaskList
+	//DoneOkTasks  TaskList
+	//DoneErrTasks TaskList
+	Tasks TaskList
 }
 
 type JobList []*Job

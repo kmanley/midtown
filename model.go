@@ -650,12 +650,19 @@ func (this *Model) GetJob(jobId JobID, which string) (*Job, error) {
 			return err
 		}
 
-		taskLists := []*TaskList{&(job.IdleTasks), &(job.ActiveTasks),
-			&(job.DoneOkTasks), &(job.DoneErrTasks)}
+		/*
+			taskLists := []*TaskList{&(job.IdleTasks), &(job.ActiveTasks),
+				&(job.DoneOkTasks), &(job.DoneErrTasks)}
+			locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
+			for idx := range locs {
+				err = this.loadTasks(tx, jobId, locs[idx], taskLists[idx])
+			}
+		*/
 		locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
 		for idx := range locs {
-			err = this.loadTasks(tx, jobId, locs[idx], taskLists[idx])
+			err = this.loadTasks(tx, jobId, locs[idx], &(job.Tasks))
 		}
+		sort.Sort(BySequence(job.Tasks))
 
 		return nil
 	})
@@ -792,7 +799,6 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 			return err
 		}
 
-		fmt.Println("doneok=%d, doneerr=%d", numDoneOK, numDoneErr) // TODO:
 		if (numDoneOK + numDoneErr) == job.NumTasks {
 			now := time.Now()
 			job.Finished = now
@@ -872,7 +878,7 @@ func (this *Model) GetJobResult(jobId JobID) ([]interface{}, error) {
 			if err != nil {
 				return err
 			}
-			res = make([]interface{}, 0, job.NumTasks)
+			res = make([]interface{}, job.NumTasks)
 			for i, task := range tasks {
 				res[i] = task.Outdata
 			}

@@ -41,6 +41,12 @@ type Task struct {
 
 type TaskList []*Task
 
+type BySequence TaskList
+
+func (a BySequence) Len() int           { return len(a) }
+func (a BySequence) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a BySequence) Less(i, j int) bool { return a[i].Seq < a[j].Seq }
+
 //type TaskMap map[int]*Task
 
 func NewTask(jobID JobID, seq int, data interface{}) *Task {
