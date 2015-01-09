@@ -18,7 +18,13 @@ func NewWorkerApi(model *Model) *WorkerApi {
 
 func (this *WorkerApi) GetWorkerTask(workerName string, task **WorkerTask) error {
 	t, err := this.model.GetWorkerTask(workerName)
-	*task = t
+	if t == nil && err == nil {
+		// gob can't transmit a top level nil, so return an empty task
+		// instead; the worker will have to interpret that as 'no task'
+		*task = &WorkerTask{}
+	} else {
+		*task = t
+	}
 	return err
 }
 

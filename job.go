@@ -128,7 +128,7 @@ func (this *Job) FromBytes(data []byte) error {
 	return nil
 }
 
-func NewJob(jobId JobID, cmd string, description string, data []interface{}, ctx *Context, ctrl *JobControl) (*Job, error) {
+func NewJob(jobId JobID, cmd string, args []string, description string, data []interface{}, ctx *Context, ctrl *JobControl) (*Job, error) {
 	now := time.Now()
 	if ctx == nil {
 		ctx = &Context{}
@@ -149,7 +149,7 @@ func NewJob(jobId JobID, cmd string, description string, data []interface{}, ctx
 		}
 	*/
 
-	newJob := &Job{Id: jobId, Cmd: cmd, Description: description, Ctx: ctx,
+	newJob := &Job{Id: jobId, Cmd: cmd, Args: args, Description: description, Ctx: ctx,
 		Ctrl: ctrl, Created: now}
 
 	newJob.NumTasks = len(data) // TODO: if <= 0, return error and don't push job on heap

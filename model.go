@@ -385,7 +385,8 @@ func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
 
 func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
 
-	job, err := NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Description, jobDef.Data, jobDef.Ctx, jobDef.Ctrl)
+	job, err := NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Args, jobDef.Description,
+		jobDef.Data, jobDef.Ctx, jobDef.Ctrl)
 	if err != nil {
 		return "", err
 	}
