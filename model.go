@@ -524,7 +524,7 @@ func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 		return nil, nil
 	}
 
-	ret := NewWorkerTask(job.Id, task.Seq, job.Cmd, task.Indata, job.Ctx)
+	ret := NewWorkerTask(job.Id, task.Seq, job.Cmd, job.Args, job.Ctrl.RemoteDir, task.Indata, job.Ctx)
 	return ret, nil
 }
 
@@ -702,7 +702,7 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId JobID) error {
 			if err != nil {
 				return &ErrInternal{fmt.Sprintf("failed to deserialize pending task %s:%s", jobId, taskSeq)}
 			}
-			pendingTask.finish(nil, "", "", ErrTaskCanceled)
+			pendingTask.finish(nil, "", ErrTaskCanceled)
 			err = this.saveTask(taskSaveBucket, pendingTask)
 			if err != nil {
 				return err
@@ -716,7 +716,7 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId JobID) error {
 // TODO: when testing, make sure job state is correct whether 1st task or nth task is in error
 // and whether ContinueJobOnTaskError is set or not
 func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, result interface{},
-	stdout string, stderr string, taskError error) error {
+	stderr string, taskError error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
 
@@ -757,7 +757,7 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 		//}
 
 		//job.setTaskDone(worker, task, result, stdout, stderr, taskError)
-		task.finish(result, stdout, stderr, taskError)
+		task.finish(result, stderr, taskError)
 
 		taskSaveBucketName := DONE_OK
 		if taskError != nil {

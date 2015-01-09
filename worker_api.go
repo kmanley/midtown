@@ -22,21 +22,11 @@ func (this *WorkerApi) GetWorkerTask(workerName string, task **WorkerTask) error
 	return err
 }
 
-type TaskResult struct {
-	WorkerName string
-	Job        JobID
-	Task       int
-	Result     interface{}
-	Stdout     string
-	Stderr     string
-	Error      error
-}
-
-func (this *WorkerApi) SetTaskDone(result *TaskResult, reserved *int) error {
-	err := this.model.SetTaskDone(result.WorkerName, result.Job, result.Task,
-		result.Result, result.Stdout, result.Stderr,
+func (this *WorkerApi) SetTaskDone(result *TaskResult, ok *bool) error {
+	err := this.model.SetTaskDone(result.WorkerName, result.Job, result.Seq,
+		result.Result, result.Stderr,
 		result.Error)
-	*reserved = 0 // TODO: is there a better way when there's nothing to return?
+	*ok = (err == nil)
 	return err
 }
 

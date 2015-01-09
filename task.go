@@ -35,7 +35,7 @@ type Task struct {
 	Error    string
 	// TODO: later
 	//ExcludedWorkers map[string]bool
-	Stdout string
+	//Stdout string
 	Stderr string
 }
 
@@ -81,7 +81,7 @@ func (this *Task) start(worker *Worker) {
 	this.Finished = *new(time.Time)
 	this.Worker = worker.Name
 	this.Error = ""
-	this.Stdout = ""
+	//this.Stdout = ""
 	this.Stderr = ""
 	worker.setTask(this)
 }
@@ -92,16 +92,16 @@ func (this *Task) reset() {
 	this.Finished = *new(time.Time)
 	this.Worker = ""
 	this.Error = ""
-	this.Stdout = ""
+	//this.Stdout = ""
 	this.Stderr = ""
 }
 
-func (this *Task) finish(result interface{}, stdout string, stderr string, err error) {
+func (this *Task) finish(result interface{}, stderr string, err error) {
 	now := time.Now()
 	this.Outdata = result
 	this.Finished = now
 	// leave this.Worker alone so there's a record of which worker did the task
-	this.Stdout = stdout
+	//this.Stdout = stdout
 	this.Stderr = stderr
 	if err != nil {
 		this.Error = err.Error()
@@ -162,11 +162,31 @@ type WorkerTask struct {
 	Job  JobID
 	Seq  int
 	Cmd  string
+	Args []string
+	Dir  string
 	Data interface{}
 	Ctx  *Context
 }
 
-func NewWorkerTask(jobId JobID, seq int, cmd string, data interface{}, ctx *Context) *WorkerTask {
+func NewWorkerTask(jobId JobID, seq int, cmd string, args []string, dir string,
+	data interface{}, ctx *Context) *WorkerTask {
 	// placeholder in case we need more initialization logic later
-	return &WorkerTask{jobId, seq, cmd, data, ctx}
+	return &WorkerTask{jobId, seq, cmd, args, dir, data, ctx}
+}
+
+type TaskResult struct {
+	WorkerName string
+	Job        JobID
+	Seq        int
+	Result     interface{}
+	//Stdout     string
+	Stderr string
+	Error  error
+}
+
+func NewTaskResult(workerName string, jobId JobID, seq int, res interface{}, //stdout string,
+	stderr string, err error) *TaskResult {
+	// placeholder in case we need more initialization logic later
+	return &TaskResult{workerName, jobId, seq, res, //stdout,
+		stderr, err}
 }

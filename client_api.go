@@ -5,6 +5,7 @@ import (
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
+	_ "io/ioutil"
 	"net/http"
 	"sync"
 )
@@ -17,12 +18,21 @@ func NewClientApi(model *Model) *ClientApi {
 	return &ClientApi{model}
 }
 
-// POST /jobs
+// TODO: don't allow posting job with no data! currently this can be done via python if
+// only Cmd is sent
 func (this *ClientApi) CreateJob(w rest.ResponseWriter, req *rest.Request) {
-	var jobDef *JobDefinition
+	jobDef := &JobDefinition{}
+
+	/*
+		content, err := ioutil.ReadAll(req.Body)
+		fmt.Println("*******************************")
+		fmt.Println(string(content))
+		fmt.Println("*******************************")
+	*/
+
 	err := req.DecodeJsonPayload(jobDef)
 	if err != nil {
-		rest.Error(w, "failed to decode job definition", 503) // TODO: error code?
+		rest.Error(w, fmt.Sprintf("failed to decode job definition: %s", err.Error()), 503) // TODO: error code?
 		return
 	}
 	spew.Dump(jobDef) // TODO:remove

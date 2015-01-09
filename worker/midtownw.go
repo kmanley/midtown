@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/kmanley/midtown"
 	"net/rpc"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -17,16 +22,63 @@ type Worker struct {
 
 func (this *Worker) GetNextTask() *midtown.WorkerTask {
 	var task midtown.WorkerTask
-	err := this.conn.Call("Distributor.GetWorkerTask", this.name, &task)
+	err := this.conn.Call("WorkerApi.GetWorkerTask", this.name, &task)
 	if err != nil {
-		// TODO:
+		glog.Errorf("failed to get task: %s", err)
 		return nil
 	}
+	glog.V(1).Infof("got task %s:%d", task.Job, task.Seq)
+	spew.Dump(task)
 	return &task
 }
 
-func (this *Worker) RunTask(task *midtown.WorkerTask) {
+func (this *Worker) SetTaskDone(taskResult *midtown.TaskResult) error {
+	var ok bool
+	err := this.conn.Call("WorkerApi.SetTaskDone", taskResult, &ok)
+	if err != nil {
+		// TODO:
+		return err
+	}
+	glog.V(1).Infof("set task %s:%d done", taskResult.Job, taskResult.Seq)
+	return nil
+}
 
+func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
+	taskResult := &midtown.TaskResult{WorkerName: this.name, Job: task.Job, Seq: task.Seq}
+	cmd := exec.Command(task.Cmd, task.Args...)
+	cmd.Dir = task.Dir
+	input := []interface{}{task.Job, task.Seq, task.Data, task.Ctx}
+	var indata bytes.Buffer
+	enc := json.NewEncoder(&indata)
+	err := enc.Encode(input)
+	if err != nil {
+		glog.Errorf("failed to encode input data %v", input)
+		taskResult.Error = err // TODO: wrap in a better error?
+		return taskResult
+	}
+	cmd.Stdin = strings.NewReader(indata.String())
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	taskResult.Stderr = stderr.String()
+	if err != nil {
+		glog.Errorf("cmd.Run failed: %v", err)
+		taskResult.Error = err // TODO: wrap in a better error?
+		return taskResult
+	}
+	var outdata interface{}
+	dec := json.NewDecoder(strings.NewReader(stdout.String()))
+	err = dec.Decode(&outdata)
+	if err != nil {
+		glog.Errorf("failed to decode stdout: %v", err)
+		glog.Error("stdout: %v", stdout.String())
+		taskResult.Error = err // TODO: wrap in a better error?
+		return taskResult
+	}
+
+	taskResult.Result = outdata
+	return taskResult
 }
 
 func main() {
@@ -54,7 +106,11 @@ func main() {
 	for {
 		task := worker.GetNextTask()
 		if task != nil {
-			worker.RunTask(task)
+			// TODO: distinguish between failure to run task and an error returned by
+			// the task subproc?
+			taskResult := worker.RunTask(task)
+			worker.SetTaskDone(taskResult) // TODO: err handling
+
 		} else {
 			// TODO: orderly shutdown, signal handler etc.
 			// TODO: exponential backoff

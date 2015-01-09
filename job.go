@@ -17,8 +17,8 @@ type JobControl struct {
 	MaxConcurrency         int
 	StartTime              time.Time
 	ContinueJobOnTaskError bool
-	//RemoteCurDir            string
-	WorkerNameRegex string
+	RemoteDir              string
+	WorkerNameRegex        string
 	//CompiledWorkerNameRegex *regexp.Regexp
 	// TODO: consider OSRegex as well, to limit to Workers matching a particular OS/version
 	//ProcessPriority int
@@ -35,6 +35,7 @@ type JobControl struct {
 
 type JobDefinition struct {
 	Cmd         string
+	Args        []string
 	Data        []interface{}
 	Description string
 	Ctx         *Context
@@ -67,6 +68,7 @@ var JOB_STATES []string = []string{
 type Job struct {
 	Id          JobID
 	Cmd         string
+	Args        []string
 	Description string
 	Ctrl        *JobControl
 	Ctx         *Context
