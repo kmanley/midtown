@@ -49,7 +49,14 @@ func (this *ClientApi) GetJobResult(w rest.ResponseWriter, req *rest.Request) {
 	jobid := req.PathParam("jobid")
 	res, err := this.model.GetJobResult(JobID(jobid))
 	if err != nil {
-		rest.Error(w, err.Error(), 503) // TODO: error code?
+		glog.Infof("err=%#v", err)
+		_, ok := err.(*ErrJobNotFinished)
+		glog.Infof("ok=%#v", ok)
+		if ok {
+			rest.Error(w, "still working", 102) // TODO: 102 Processing (used by WebDAV)
+		} else {
+			rest.Error(w, err.Error(), 500) // TODO: error code?
+		}
 		return
 	}
 	w.WriteJson(&res)
@@ -60,7 +67,7 @@ func (this *ClientApi) GetJob(w rest.ResponseWriter, req *rest.Request) {
 	jobid := req.PathParam("jobid")
 	res, err := this.model.GetJob(JobID(jobid))
 	if err != nil {
-		rest.Error(w, err.Error(), 503) // TODO: error code?
+		rest.Error(w, err.Error(), 500) // TODO: error code?
 		return
 	}
 	w.WriteJson(&res)
@@ -70,7 +77,7 @@ func (this *ClientApi) GetJob(w rest.ResponseWriter, req *rest.Request) {
 func (this *ClientApi) GetWorkers(w rest.ResponseWriter, req *rest.Request) {
 	res, err := this.model.GetWorkers()
 	if err != nil {
-		rest.Error(w, err.Error(), 503) // TODO: error code?
+		rest.Error(w, err.Error(), 500) // TODO: error code?
 		return
 	}
 	w.WriteJson(&res)

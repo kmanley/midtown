@@ -1,5 +1,12 @@
 import requests
 import json
+import time
+import logging
+log = logging.getLogger(__name__)
+
+# TODO: deal with marshaling time.Duration (e.g. job/task timeouts)
+# TODO: deal with marshaling time.Date (e.g. StartAfter time)
+
 
 """
 type Context map[string]string
@@ -39,33 +46,68 @@ type JobDefinition struct {
 	#def __init__(self, cmd):
 	#	self.Cmd=cmd
 		
+		
+class Error(Exception):
+	pass
+
+class Job(object):
+	def __init__(self, client, jobid):
+		self.client = client
+		self.jobid = jobid 
+		
+	def GetJobResult(self):
+		r = requests.get("http://%s:%d/result/%s" % (self.client.hostname, self.client.port, self.jobid))
+		print r.status_code
+		if r.status_code == 102:
+			# job still working
+			log.debug("job %s still working" % self.jobid)
+			return None
+		ret = json.loads(r.text)
+		if len(ret) == 1:
+			err = ret["Error"]
+			log.error("job %s resulted in error: %s" % (self.jobid, err))
+			raise Error(err)
+		else:
+			log.debug("successful job result: %s" % repr(ret))
+			return ret
+	
+	# TODO: improve
+	def Wait(self):
+		while True:
+			ret = self.GetJobResult()
+			if ret:
+				return ret
+			time.sleep(1.0) # TODO:
 
 class MidtownClient(object):
-	def __init__(self):
-		# TODO:
-		pass
-		
+	def __init__(self, hostname, port):
+		self.hostname = hostname
+		self.port = port
 		
 	def CreateJob(self, cmd, args, data, descript="", ctx=None, **ctrl):
 		ctx = ctx or {}
 		jobdef = dict(Cmd=cmd, Args=args, Data=data, Description=descript, Ctx=ctx, Ctrl=ctrl)
-		#jobdef = dict(Cmd=cmd)
-		#jobdef = JobDef(cmd)
 		payload = json.dumps(jobdef)		
-		print payload # TODO:
-		r = requests.post("http://localhost:9997/jobs", data=payload, headers={"Content-Type":"application/json"})
-		print(r.text)
-
+		log.debug("CreateJob payload: %s" % payload)
+		r = requests.post("http://%s:%d/jobs" % (self.hostname, self.port), 
+						data=payload, headers={"Content-Type":"application/json"})
+		ret = json.loads(r.text)
+		if type(ret) == dict:
+			raise Error(ret["Error"])
+		else:
+			return Job(self, ret)
 
 def main():
-	c = MidtownClient()
+	c = MidtownClient("localhost", 9997)
 	#c.CreateJob("python", ['-c', '"import json,sys;sys.stdout.write(json.dumps(json.loads(sys.stdin.read())*2));sys.stdout.flush()"'], 
 	#					range(3), "my job", {"path":"/foo/bar"}, 
 	#        Priority=1, MaxConcurrency=20)
 	#c.CreateJob("echo", ["123"], range(3), "test")
 	
-	c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
-	             [1,2,3], Ctx={"foo":"bar"})
+	job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
+	             range(20), Ctx={"foo":"bar"})
+	ret = job.Wait()
+	print ret
 	
 
 def main2(): 

@@ -8,6 +8,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/kmanley/midtown"
+	"io"
 	_ "io/ioutil"
 	"net/rpc"
 	"os"
@@ -17,15 +18,53 @@ import (
 )
 
 type Worker struct {
-	name string
-	conn *rpc.Client
+	name       string
+	serverName string
+	serverPort int
+	conn       *rpc.Client
+}
+
+func NewWorker(serverName string, serverPort int) (*Worker, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		glog.Error("can't get hostname: %s", err)
+		return nil, err
+	}
+	name := fmt.Sprintf("%s:%d", hostname, os.Getpid())
+	worker := &Worker{name, serverName, serverPort, nil}
+	return worker, nil
+}
+
+func (this *Worker) Connect() error {
+	distributor := fmt.Sprintf("%s:%d", this.serverName, this.serverPort)
+	glog.V(1).Infof("attempting to connect to %s", distributor)
+	conn, err := rpc.Dial("tcp", distributor)
+	if err != nil {
+		// TODO:
+		glog.Errorf("can't connect to distributor %s: %s", distributor, err)
+		return err
+	}
+	this.conn = conn
+	return nil
+}
+
+func shouldReconnect(err error) bool {
+	if err == rpc.ErrShutdown || err == io.EOF || err == io.ErrUnexpectedEOF {
+		return true
+	} else {
+		return false
+	}
 }
 
 func (this *Worker) GetNextTask() *midtown.WorkerTask {
 	var task midtown.WorkerTask
 	err := this.conn.Call("WorkerApi.GetWorkerTask", this.name, &task)
 	if err != nil {
-		glog.Errorf("failed to get task: %s", err)
+		if shouldReconnect(err) {
+			this.Connect() // don't care if it causes an error, we'll keep retrying
+			return nil
+		}
+		glog.Errorf("failed to get task: %#v", err)
 		return nil
 	}
 	if task.Job == "" {
@@ -67,29 +106,11 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 	}
 	cmd.Stdin = strings.NewReader(indata.String())
 
-	/*
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			glog.Errorf("failed to connect stdout pipe: %v", err)
-			taskResult.Error = err
-			return taskResult
-		}
-	*/
-
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-
-	/*
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			glog.Errorf("failed to get stdout pipe: %v", err)
-			taskResult.Error = err
-			return taskResult
-		}
-	*/
 
 	fmt.Println(cmd) // TODO:
 
@@ -98,21 +119,6 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 		taskResult.Error = err
 		return taskResult
 	}
-
-	/*
-		stdoutBytes, err := ioutil.ReadAll(stdout)
-		if err != nil {
-			glog.Errorf("failed to read stdout: %v", err)
-			taskResult.Error = err
-			return taskResult
-		}
-
-		if err := cmd.Wait(); err != nil {
-			glog.Errorf("wait failed: %v", err)
-			taskResult.Error = err
-			return taskResult
-		}
-	*/
 
 	fmt.Println("stdout: ", stdout.String())
 	fmt.Println("stderr: ", stderr.String())
@@ -141,25 +147,8 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 func main() {
 	flag.Parse()
 
-	dest := "127.0.0.1" // TODO: cmdline
-	port := 9998        // TODO: cmdline
-	distributor := fmt.Sprintf("%s:%d", dest, port)
-	conn, err := rpc.Dial("tcp", distributor)
-	if err != nil {
-		// TODO:
-		glog.Errorf("can't connect to distributor: %s", err)
-		os.Exit(1)
-	}
-
-	// TODO: allow overriding name on cmdline?
-	hostname, err := os.Hostname()
-	if err != nil {
-		glog.Error("can't get hostname: %s", err)
-		os.Exit(1)
-	}
-	name := fmt.Sprintf("%s:%d", hostname, os.Getpid())
-	worker := &Worker{name, conn}
-	glog.Infof("worker %s starting", name)
+	worker, _ := NewWorker("localhost", 9998)
+	worker.Connect()
 
 	//task := &midtown.WorkerTask{Cmd: "python", Args: []string{"-c", "print 12345"}}
 	//task := &midtown.WorkerTask{Cmd: "python", Args: []string{"test.py"}}

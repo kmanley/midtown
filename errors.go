@@ -20,7 +20,7 @@ type ErrInvalidJob struct {
 	jobId JobID
 }
 
-func (this *ErrInvalidJob) Error() string {
+func (this ErrInvalidJob) Error() string {
 	return fmt.Sprintf("invalid job %s", this.jobId)
 }
 
@@ -28,8 +28,8 @@ type ErrJobNotFinished struct {
 	jobId JobID
 }
 
-func (this *ErrJobNotFinished) Error() string {
-	return fmt.Sprintf("job %s hasn't finished", this.jobId)
+func (this ErrJobNotFinished) Error() string {
+	return fmt.Sprintf("job %s isn't finished", this.jobId)
 }
 
 type ErrInvalidTask struct {
@@ -37,7 +37,7 @@ type ErrInvalidTask struct {
 	seq   int
 }
 
-func (this *ErrInvalidTask) Error() string {
+func (this ErrInvalidTask) Error() string {
 	return fmt.Sprintf("invalid task %s:%d", this.jobId, this.seq)
 }
 
@@ -45,7 +45,7 @@ type ErrInvalidWorker struct {
 	name string
 }
 
-func (this *ErrInvalidWorker) Error() string {
+func (this ErrInvalidWorker) Error() string {
 	return fmt.Sprintf("invalid worker %s", this.name)
 }
 
@@ -53,7 +53,7 @@ type ErrInternal struct {
 	msg string
 }
 
-func (this *ErrInternal) Error() string {
+func (this ErrInternal) Error() string {
 	return fmt.Sprintf("internal error: %s", this.msg)
 }
 
