@@ -65,7 +65,7 @@ func (this *ClientApi) GetJobResult(w rest.ResponseWriter, req *rest.Request) {
 // GET /job/:jobid
 func (this *ClientApi) GetJob(w rest.ResponseWriter, req *rest.Request) {
 	jobid := req.PathParam("jobid")
-	res, err := this.model.GetJob(JobID(jobid))
+	res, err := this.model.GetJobDetails(JobID(jobid))
 	if err != nil {
 		rest.Error(w, err.Error(), 500) // TODO: error code?
 		return

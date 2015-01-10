@@ -74,7 +74,7 @@ type Job struct {
 	Ctx         *Context
 	Created     time.Time
 	Started     time.Time
-	//Suspended      time.Time
+	Suspended   time.Time
 	//Retried        time.Time // note: retried or resumed
 	//Cancelled      time.Time
 	//CancelReason   string // reason job was cancelled
@@ -435,3 +435,21 @@ func (this *Job) percentComplete() float32 {
 	}
 }
 */
+
+// high-level job info for web UI
+type JobSummary struct {
+	Id              JobID
+	Description     string
+	Ctrl            *JobControl
+	Created         time.Time
+	Started         time.Time
+	Suspended       time.Time
+	Finished        time.Time
+	Error           string
+	NumTasks        int
+	NumIdleTasks    int
+	NumActiveTasks  int
+	NumDoneOkTasks  int
+	NumDoneErrTasks int
+	PctComplete     int
+}

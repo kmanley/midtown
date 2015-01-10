@@ -383,6 +383,8 @@ func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
 	return nil
 }
 
+// TODO: func (this *Model) GetActiveJobs()
+
 func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
 
 	job, err := NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Args, jobDef.Description,
@@ -638,36 +640,53 @@ func (this *Model) SetJobTimeout(jobId JobID, timeout time.Duration) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Timeout = timeout; return nil })
 }
 
-func (this *Model) GetJob(jobId JobID) (*Job, error) {
-	var job *Job
+// Gets job summary info. For full task details call GetJobDetails
+func (this *Model) GetJobSummary(jobId JobID) (*JobSummary, error) {
+	var summ *JobSummary
 	err := this.Db.View(func(tx *bolt.Tx) error {
+		job, err := this.findJob(tx, jobId)
+		if err != nil {
+			return err
+		}
 
-		locs := []string{ACTIVE, COMPLETED}
-		for _, loc := range locs {
-			bucket, err := this.getJobsBucket(tx, loc)
+		summ := &JobSummary{job.Id, job.Description, job.Ctrl,
+			job.Created, job.Started, job.Suspended, job.Finished,
+			job.Error, job.NumTasks, 0, 0, 0, 0, 0}
+
+		locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
+		slots := []*int{&(summ.NumIdleTasks), &(summ.NumActiveTasks),
+			&(summ.NumDoneOkTasks), &(summ.NumDoneErrTasks)}
+		for idx, loc := range locs {
+			err := this.loadTasks(tx, jobId, loc, &(job.Tasks))
+			*slots[idx], err = this.getNumTasksInBucket(tx, jobId, locs[idx])
 			if err != nil {
 				return err
 			}
-
-			job, err = this.loadJob(bucket, jobId)
-			if err == nil {
-				break
-			}
 		}
 
-		if job == nil {
-			return &ErrInvalidJob{jobId}
+		if summ.Finished.IsZero() {
+			summ.PctComplete = int(float32(summ.NumDoneOkTasks+summ.NumDoneErrTasks) / float32(summ.NumTasks))
+		} else {
+			summ.PctComplete = 100
 		}
 
-		/*
-			taskLists := []*TaskList{&(job.IdleTasks), &(job.ActiveTasks),
-				&(job.DoneOkTasks), &(job.DoneErrTasks)}
-			locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
-			for idx := range locs {
-				err = this.loadTasks(tx, jobId, locs[idx], taskLists[idx])
-			}
-		*/
-		locs = []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return summ, nil
+}
+
+// Gets job details including task details
+func (this *Model) GetJobDetails(jobId JobID) (*Job, error) {
+	var job *Job
+	err := this.Db.View(func(tx *bolt.Tx) error {
+		job, err := this.findJob(tx, jobId)
+		if err != nil {
+			return err
+		}
+		locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
 		for idx := range locs {
 			err := this.loadTasks(tx, jobId, locs[idx], &(job.Tasks))
 			if err != nil {
@@ -681,7 +700,6 @@ func (this *Model) GetJob(jobId JobID) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return job, nil
 }
 
