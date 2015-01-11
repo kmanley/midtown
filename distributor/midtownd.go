@@ -21,6 +21,7 @@ func main() {
 	dbname := "/tmp/midtown_test.db" // TODO:
 	clientApiPort := 9997
 	workerApiPort := 9998 // TODO: cmdline
+	webApiPort := 9999
 	App.model = &midtown.Model{}
 	App.model.Init(dbname, 0600)
 	App.wg = &sync.WaitGroup{}
@@ -28,8 +29,11 @@ func main() {
 	App.wg.Add(1)
 	go midtown.StartWorkerApi(App.model, workerApiPort, App.wg)
 
-	App.wg.Add(2)
+	App.wg.Add(1)
 	go midtown.StartClientApi(App.model, clientApiPort, App.wg)
+
+	App.wg.Add(1)
+	go midtown.StartWebApi(App.model, webApiPort, App.wg)
 
 	App.wg.Wait()
 

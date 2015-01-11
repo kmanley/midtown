@@ -104,8 +104,10 @@ def main():
 	#        Priority=1, MaxConcurrency=20)
 	#c.CreateJob("echo", ["123"], range(3), "test")
 	
-	job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
-	             range(20), Ctx={"foo":"bar"})
+	#job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
+	#             range(20), Ctx={"foo":"bar"})
+	job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);import time;time.sleep(1);json.dump(data*2,sys.stdout)"],
+	             range(20), Ctx={"foo":"bar"})				
 	ret = job.Wait()
 	print ret
 	

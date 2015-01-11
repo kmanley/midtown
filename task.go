@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	_ "fmt"
+	"github.com/kmanley/midtown/common"
 	"time"
 )
 
@@ -25,7 +26,7 @@ var TASK_STATES []string = []string{
 */
 
 type Task struct {
-	Job      JobID
+	Job      common.JobID
 	Seq      int
 	Indata   interface{}
 	Outdata  interface{}
@@ -49,7 +50,7 @@ func (a BySequence) Less(i, j int) bool { return a[i].Seq < a[j].Seq }
 
 //type TaskMap map[int]*Task
 
-func NewTask(jobID JobID, seq int, data interface{}) *Task {
+func NewTask(jobID common.JobID, seq int, data interface{}) *Task {
 	// placeholder in case we need more initialization logic later
 	return &Task{Job: jobID, Seq: seq, Indata: data}
 }
@@ -159,7 +160,7 @@ func (this *Task) elapsed() time.Duration {
 */
 
 type WorkerTask struct {
-	Job  JobID
+	Job  common.JobID
 	Seq  int
 	Cmd  string
 	Args []string
@@ -168,7 +169,7 @@ type WorkerTask struct {
 	Ctx  *Context
 }
 
-func NewWorkerTask(jobId JobID, seq int, cmd string, args []string, dir string,
+func NewWorkerTask(jobId common.JobID, seq int, cmd string, args []string, dir string,
 	data interface{}, ctx *Context) *WorkerTask {
 	// placeholder in case we need more initialization logic later
 	return &WorkerTask{jobId, seq, cmd, args, dir, data, ctx}
@@ -176,7 +177,7 @@ func NewWorkerTask(jobId JobID, seq int, cmd string, args []string, dir string,
 
 type TaskResult struct {
 	WorkerName string
-	Job        JobID
+	Job        common.JobID
 	Seq        int
 	Result     interface{}
 	//Stdout     string
@@ -184,7 +185,7 @@ type TaskResult struct {
 	Error  error
 }
 
-func NewTaskResult(workerName string, jobId JobID, seq int, res interface{}, //stdout string,
+func NewTaskResult(workerName string, jobId common.JobID, seq int, res interface{}, //stdout string,
 	stderr string, err error) *TaskResult {
 	// placeholder in case we need more initialization logic later
 	return &TaskResult{workerName, jobId, seq, res, //stdout,

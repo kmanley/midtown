@@ -3,6 +3,7 @@ package midtown
 import (
 	"errors"
 	"fmt"
+	"github.com/kmanley/midtown/common"
 )
 
 /*
@@ -17,7 +18,7 @@ func (this *Err) Error() string {
 */
 
 type ErrInvalidJob struct {
-	jobId JobID
+	jobId common.JobID
 }
 
 func (this ErrInvalidJob) Error() string {
@@ -25,7 +26,7 @@ func (this ErrInvalidJob) Error() string {
 }
 
 type ErrJobNotFinished struct {
-	jobId JobID
+	jobId common.JobID
 }
 
 func (this ErrJobNotFinished) Error() string {
@@ -33,7 +34,7 @@ func (this ErrJobNotFinished) Error() string {
 }
 
 type ErrInvalidTask struct {
-	jobId JobID
+	jobId common.JobID
 	seq   int
 }
 

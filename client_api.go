@@ -5,6 +5,7 @@ import (
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
+	"github.com/kmanley/midtown/common"
 	_ "io/ioutil"
 	"net/http"
 	"sync"
@@ -47,7 +48,7 @@ func (this *ClientApi) CreateJob(w rest.ResponseWriter, req *rest.Request) {
 // GET /result/:jobid
 func (this *ClientApi) GetJobResult(w rest.ResponseWriter, req *rest.Request) {
 	jobid := req.PathParam("jobid")
-	res, err := this.model.GetJobResult(JobID(jobid))
+	res, err := this.model.GetJobResult(common.JobID(jobid))
 	if err != nil {
 		glog.Infof("err=%#v", err)
 		_, ok := err.(*ErrJobNotFinished)
@@ -65,7 +66,7 @@ func (this *ClientApi) GetJobResult(w rest.ResponseWriter, req *rest.Request) {
 // GET /job/:jobid
 func (this *ClientApi) GetJob(w rest.ResponseWriter, req *rest.Request) {
 	jobid := req.PathParam("jobid")
-	res, err := this.model.GetJobDetails(JobID(jobid))
+	res, err := this.model.GetJobDetails(common.JobID(jobid))
 	if err != nil {
 		rest.Error(w, err.Error(), 500) // TODO: error code?
 		return

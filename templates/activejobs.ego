@@ -1,0 +1,30 @@
+<%! func ActiveJobs(w io.Writer, summList common.JobSummaryList) error %>
+<%%
+import "github.com/kmanley/midtown/common" 
+%%>
+
+<html>
+  <body>
+    <h3>Active Jobs</h3>
+	<table border="1" cellpadding="0" cellspacing="0">
+		<tr><th>ID</th><th>Description</th><th>Created</th><th>Started</th><th>Finished</th><th>#Tasks</th><th>Pct</th></tr>
+		<%
+		for _, job := range summList {
+		%>
+		<tr>
+			<td><%=job.Id%></td>
+			<td><%=job.Description%></td>
+			<td><%=formatTime(job.Created)%></td>
+			<td><%=formatTime(job.Started)%></td>
+			<td><%=formatTime(job.Finished)%></td>
+			<td><%=job.NumTasks%></td>
+			<td><%=job.PctComplete%></td>
+		</tr>
+			
+		<%	
+		}
+		%>
+	</table>
+
+  </body>
+</html>

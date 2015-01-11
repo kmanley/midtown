@@ -45,6 +45,7 @@ package midtown
 
 import (
 	"github.com/boltdb/bolt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"os"
 	//"container/heap"
@@ -54,6 +55,7 @@ import (
 	"strings"
 	//"sync"
 	"errors"
+	"github.com/kmanley/midtown/common"
 	"sort"
 	"time"
 )
@@ -74,7 +76,7 @@ type Model struct {
 	Db           *bolt.DB
 	Fifo         bool // TODO: consider persisting this setting in bolt
 	Prng         *rand.Rand
-	LastJobID    JobID
+	LastJobID    common.JobID
 	ShutdownFlag chan bool
 }
 
@@ -121,11 +123,11 @@ func (this *Model) Close() {
 // property for our keys in boltdb. When using multiple grids in a single
 // environment there is a small chance of duplicate IDs across grids
 // TODO: consider grid id prefix?
-func (this *Model) NewJobID() (newID JobID) {
+func (this *Model) NewJobID() (newID common.JobID) {
 	const JOBID_FORMAT = "060102150405.999999"
 	for {
 		now := time.Now()
-		newID = JobID(strings.Replace(now.UTC().Format(JOBID_FORMAT), ".", "", 1))
+		newID = common.JobID(strings.Replace(now.UTC().Format(JOBID_FORMAT), ".", "", 1))
 		for len(newID) < len(JOBID_FORMAT)-1 {
 			newID = newID + "0"
 		}
@@ -233,7 +235,7 @@ func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error
 	return bucket, nil
 }
 
-func (this *Model) getTasksBucket(tx *bolt.Tx, jobId JobID, which string) (*bolt.Bucket, error) {
+func (this *Model) getTasksBucket(tx *bolt.Tx, jobId common.JobID, which string) (*bolt.Bucket, error) {
 	bucket := tx.Bucket([]byte(jobId))
 	if bucket == nil {
 		return nil, fmt.Errorf("failed to open task bucket %s", jobId)
@@ -245,7 +247,7 @@ func (this *Model) getTasksBucket(tx *bolt.Tx, jobId JobID, which string) (*bolt
 	return subBucket, nil
 }
 
-func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId JobID, which string) (int, error) {
+func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId common.JobID, which string) (int, error) {
 	bucket, err := this.getTasksBucket(tx, jobId, which)
 	if err != nil {
 		return 0, err
@@ -282,7 +284,7 @@ func (this *Model) deleteJob(bucket *bolt.Bucket, job *Job) error {
 	return err
 }
 
-func (this *Model) loadJob(bucket *bolt.Bucket, jobId JobID) (*Job, error) {
+func (this *Model) loadJob(bucket *bolt.Bucket, jobId common.JobID) (*Job, error) {
 	jobBytes := bucket.Get([]byte(jobId))
 	if jobBytes == nil {
 		return nil, &ErrInvalidJob{jobId}
@@ -320,7 +322,7 @@ func (this *Model) deleteTask(bucket *bolt.Bucket, task *Task) error {
 	return err
 }
 
-func (this *Model) loadTask(bucket *bolt.Bucket, jobId JobID, seq int) (*Task, error) {
+func (this *Model) loadTask(bucket *bolt.Bucket, jobId common.JobID, seq int) (*Task, error) {
 	key := fmt.Sprintf("%0*d", TASK_KEY_LEN, seq)
 	taskBytes := bucket.Get([]byte(key))
 	if taskBytes == nil {
@@ -336,7 +338,7 @@ func (this *Model) loadTask(bucket *bolt.Bucket, jobId JobID, seq int) (*Task, e
 	return task, nil
 }
 
-func (this *Model) loadTasks(tx *bolt.Tx, jobId JobID, which string, tasks *TaskList) error {
+func (this *Model) loadTasks(tx *bolt.Tx, jobId common.JobID, which string, tasks *TaskList) error {
 	bucket, err := this.getTasksBucket(tx, jobId, which)
 	if err != nil {
 		return err
@@ -356,6 +358,33 @@ func (this *Model) loadTasks(tx *bolt.Tx, jobId JobID, which string, tasks *Task
 	}
 	return nil
 }
+
+func (this *Model) GetActiveJobIds(tx *bolt.Tx, jobids *[]common.JobID, offset int, count int) error {
+	bucket, err := this.getJobsBucket(tx, ACTIVE)
+	if err != nil {
+		return err
+	}
+
+	curs := bucket.Cursor()
+	for jobid, _ := curs.First(); jobid != nil; jobid, _ = curs.Next() {
+		if offset > 0 {
+			offset -= 1
+		} else {
+			*jobids = append(*jobids, common.JobID(jobid))
+			if count > 0 {
+				count -= 1
+				if count == 0 {
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// TODO:
+// func (this *Model) getCompletedJobIds(tx *bolt.Tx, dt time.Date, jobids *[]JobID, offset int, count int) error {
 
 // loads currently active jobs and populates the passed in list
 // the list is sorted such that highest priority jobs come first
@@ -383,9 +412,46 @@ func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
 	return nil
 }
 
-// TODO: func (this *Model) GetActiveJobs()
+func (this *Model) SummarizeJobs(jobids []common.JobID) (common.JobSummaryList, error) {
+	summList := make(common.JobSummaryList, 0, len(jobids))
+	for _, jobid := range jobids {
+		summ, err := this.GetJobSummary(jobid)
+		if err != nil {
+			return nil, err
+		}
 
-func (this *Model) CreateJob(jobDef *JobDefinition) (JobID, error) {
+		glog.Info("summary:") // TODO:
+		spew.Dump(summ)       // TODO:
+
+		summList = append(summList, summ)
+	}
+	return summList, nil
+}
+
+func (this *Model) GetActiveJobsSummary(offset int, count int) (common.JobSummaryList, error) {
+	var summList common.JobSummaryList
+	var jobids []common.JobID
+	err := this.Db.View(func(tx *bolt.Tx) error {
+		err := this.GetActiveJobIds(tx, &jobids, offset, count)
+		if err != nil {
+			return err
+		}
+
+		spew.Dump(jobids)
+
+		summList, err = this.SummarizeJobs(jobids)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return summList, nil
+}
+
+func (this *Model) CreateJob(jobDef *JobDefinition) (common.JobID, error) {
 
 	job, err := NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Args, jobDef.Description,
 		jobDef.Data, jobDef.Ctx, jobDef.Ctrl)
@@ -601,7 +667,7 @@ func (this *Model) getJobForWorker(tx *bolt.Tx, worker *Worker) (*Job, error) {
 	}
 }
 
-func (this *Model) modifyJob(jobId JobID, fn func(*Job) error) error {
+func (this *Model) modifyJob(jobId common.JobID, fn func(*Job) error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
 		activeJobsBucket, err := this.getJobsBucket(tx, ACTIVE)
@@ -628,28 +694,28 @@ func (this *Model) modifyJob(jobId JobID, fn func(*Job) error) error {
 	return err
 }
 
-func (this *Model) SetJobMaxConcurrency(jobId JobID, maxcon int) error {
+func (this *Model) SetJobMaxConcurrency(jobId common.JobID, maxcon int) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.MaxConcurrency = maxcon; return nil })
 }
 
-func (this *Model) SetJobPriority(jobId JobID, priority int8) error {
+func (this *Model) SetJobPriority(jobId common.JobID, priority int8) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Priority = priority; return nil })
 }
 
-func (this *Model) SetJobTimeout(jobId JobID, timeout time.Duration) error {
+func (this *Model) SetJobTimeout(jobId common.JobID, timeout time.Duration) error {
 	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Timeout = timeout; return nil })
 }
 
 // Gets job summary info. For full task details call GetJobDetails
-func (this *Model) GetJobSummary(jobId JobID) (*JobSummary, error) {
-	var summ *JobSummary
+func (this *Model) GetJobSummary(jobId common.JobID) (*common.JobSummary, error) {
+	var summ *common.JobSummary
 	err := this.Db.View(func(tx *bolt.Tx) error {
 		job, err := this.findJob(tx, jobId)
 		if err != nil {
 			return err
 		}
 
-		summ := &JobSummary{job.Id, job.Description, job.Ctrl,
+		summ = &common.JobSummary{job.Id, job.Description, job.Ctrl,
 			job.Created, job.Started, job.Suspended, job.Finished,
 			job.Error, job.NumTasks, 0, 0, 0, 0, 0}
 
@@ -665,7 +731,7 @@ func (this *Model) GetJobSummary(jobId JobID) (*JobSummary, error) {
 		}
 
 		if summ.Finished.IsZero() {
-			summ.PctComplete = int(float32(summ.NumDoneOkTasks+summ.NumDoneErrTasks) / float32(summ.NumTasks))
+			summ.PctComplete = int(float32(summ.NumDoneOkTasks+summ.NumDoneErrTasks) / float32(summ.NumTasks) * 100.0)
 		} else {
 			summ.PctComplete = 100
 		}
@@ -679,7 +745,7 @@ func (this *Model) GetJobSummary(jobId JobID) (*JobSummary, error) {
 }
 
 // Gets job details including task details
-func (this *Model) GetJobDetails(jobId JobID) (*Job, error) {
+func (this *Model) GetJobDetails(jobId common.JobID) (*Job, error) {
 	var job *Job
 	err := this.Db.View(func(tx *bolt.Tx) error {
 		job, err := this.findJob(tx, jobId)
@@ -703,7 +769,7 @@ func (this *Model) GetJobDetails(jobId JobID) (*Job, error) {
 	return job, nil
 }
 
-func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId JobID) error {
+func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId common.JobID) error {
 	taskSaveBucket, err := this.getTasksBucket(tx, jobId, DONE_ERR)
 	if err != nil {
 		return err
@@ -734,7 +800,7 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId JobID) error {
 
 // TODO: when testing, make sure job state is correct whether 1st task or nth task is in error
 // and whether ContinueJobOnTaskError is set or not
-func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, result interface{},
+func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq int, result interface{},
 	stderr string, taskError error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
@@ -861,7 +927,7 @@ func (this *Model) SetTaskDone(workerName string, jobId JobID, taskSeq int, resu
 }
 
 // Looks for an active job, if not found looks for a completed job.
-func (this *Model) findJob(tx *bolt.Tx, jobId JobID) (*Job, error) {
+func (this *Model) findJob(tx *bolt.Tx, jobId common.JobID) (*Job, error) {
 	var job *Job
 	// this function can be called on either an active or completed
 	// job so we have to check both buckets
@@ -888,7 +954,7 @@ func (this *Model) findJob(tx *bolt.Tx, jobId JobID) (*Job, error) {
 // Gets job result data; this only works on jobs that are completed without errors.
 // To get partial results for a running job, call GetPartialJobResult
 // To get full info for jobs including which tasks failed, call GetJob
-func (this *Model) GetJobResult(jobId JobID) ([]interface{}, error) {
+func (this *Model) GetJobResult(jobId common.JobID) ([]interface{}, error) {
 	var res []interface{}
 	err := this.Db.View(func(tx *bolt.Tx) error {
 		job, err := this.findJob(tx, jobId)
