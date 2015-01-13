@@ -47,10 +47,27 @@ func (this *WebApi) GetActiveJobs(w http.ResponseWriter, r *http.Request, _ http
 	*/
 }
 
+func (this *WebApi) GetCompletedJobs(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	dt := params.ByName("dt")
+	offset := 0
+	count := 0
+	offset, _ = strconv.Atoi(r.FormValue("offset"))
+	count, _ = strconv.Atoi(r.FormValue("count"))
+
+	summList, err := this.model.GetCompletedJobsSummary(dt, offset, count)
+	if err != nil {
+		templates.Error(w, err)
+	}
+
+	spew.Dump(summList) // TODO:
+	templates.CompletedJobs(w, dt, summList)
+}
+
 func StartWebApi(model *Model, port int, wg *sync.WaitGroup) {
 	api := NewWebApi(model)
 	handler := httprouter.New()
 	handler.GET("/jobs/active", api.GetActiveJobs)
+	handler.GET("/jobs/completed/:dt", api.GetCompletedJobs)
 
 	glog.Infof("serving web API on %d", port)
 	http.ListenAndServe(fmt.Sprintf(":%d", port), handler)

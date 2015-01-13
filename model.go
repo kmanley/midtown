@@ -44,6 +44,7 @@ TODO: background goroutine which
 package midtown
 
 import (
+	"bytes"
 	"github.com/boltdb/bolt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
@@ -383,6 +384,33 @@ func (this *Model) GetActiveJobIds(tx *bolt.Tx, jobids *[]common.JobID, offset i
 	return nil
 }
 
+func (this *Model) GetCompletedJobIds(tx *bolt.Tx, dt string,
+	jobids *[]common.JobID, offset int, count int) error {
+	bucket, err := this.getJobsBucket(tx, COMPLETED)
+	if err != nil {
+		return err
+	}
+
+	curs := bucket.Cursor()
+
+	prefix := []byte(dt)
+	for jobid, _ := curs.Seek(prefix); bytes.HasPrefix(jobid, prefix); jobid, _ = curs.Next() {
+		if offset > 0 {
+			offset -= 1
+		} else {
+			*jobids = append(*jobids, common.JobID(jobid))
+			if count > 0 {
+				count -= 1
+				if count == 0 {
+					break
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // TODO:
 // func (this *Model) getCompletedJobIds(tx *bolt.Tx, dt time.Date, jobids *[]JobID, offset int, count int) error {
 
@@ -433,6 +461,29 @@ func (this *Model) GetActiveJobsSummary(offset int, count int) (common.JobSummar
 	var jobids []common.JobID
 	err := this.Db.View(func(tx *bolt.Tx) error {
 		err := this.GetActiveJobIds(tx, &jobids, offset, count)
+		if err != nil {
+			return err
+		}
+
+		spew.Dump(jobids)
+
+		summList, err = this.SummarizeJobs(jobids)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return summList, nil
+}
+
+func (this *Model) GetCompletedJobsSummary(dt string, offset int, count int) (common.JobSummaryList, error) {
+	var summList common.JobSummaryList
+	var jobids []common.JobID
+	err := this.Db.View(func(tx *bolt.Tx) error {
+		err := this.GetCompletedJobIds(tx, dt, &jobids, offset, count)
 		if err != nil {
 			return err
 		}

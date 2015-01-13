@@ -1,11 +1,11 @@
-<%! func ActiveJobs(w io.Writer, summList common.JobSummaryList) error %>
+<%! func CompletedJobs(w io.Writer, dt string, summList common.JobSummaryList) error %>
 <%%
 import "github.com/kmanley/midtown/common" 
 %%>
 
 <html>
   <body>
-    <h3>Active Jobs</h3>
+    <h3>Completed Jobs for <%=dt%></h3>
 	<table border="1" cellpadding="0" cellspacing="0">
 		<tr>
 			<th>ID</th>
