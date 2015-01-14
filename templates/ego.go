@@ -61,46 +61,50 @@ _, _ = fmt.Fprintf(w, "\n\n<html>\n  <body>\n    <h3>Completed Jobs for ")
 //line completedjobs.ego:8
 _, _ = fmt.Fprintf(w, "%v", dt)
 //line completedjobs.ego:8
-_, _ = fmt.Fprintf(w, "</h3>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>ID</th>\n\t\t\t<th>Description</th>\n\t\t\t<th>Created</th>\n\t\t\t<th>Started</th>\n\t\t\t<th>Finished</th>\n\t\t\t<th>#Tasks</th>\n\t\t\t<th>Pct</th>\n\t\t</tr>\n\t\t")
-//line completedjobs.ego:20
+_, _ = fmt.Fprintf(w, "</h3>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>ID</th>\n\t\t\t<th>Description</th>\n\t\t\t<th>Created</th>\n\t\t\t<th>Started</th>\n\t\t\t<th>Finished</th>\n\t\t\t<th>Duration</th>\n\t\t\t<th>#Tasks</th>\n\t\t\t<th>Pct</th>\n\t\t</tr>\n\t\t")
+//line completedjobs.ego:21
 
 		for _, job := range summList {
 		
-//line completedjobs.ego:23
+//line completedjobs.ego:24
 _, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td>")
-//line completedjobs.ego:24
+//line completedjobs.ego:25
 _, _ = fmt.Fprintf(w, "%v", job.Id)
-//line completedjobs.ego:24
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
 //line completedjobs.ego:25
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:26
 _, _ = fmt.Fprintf(w, "%v", job.Description)
-//line completedjobs.ego:25
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
 //line completedjobs.ego:26
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:27
 _, _ = fmt.Fprintf(w, "%v", formatTime(job.Created))
-//line completedjobs.ego:26
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
 //line completedjobs.ego:27
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:28
 _, _ = fmt.Fprintf(w, "%v", formatTime(job.Started))
-//line completedjobs.ego:27
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
 //line completedjobs.ego:28
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:29
 _, _ = fmt.Fprintf(w, "%v", formatTime(job.Finished))
-//line completedjobs.ego:28
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
 //line completedjobs.ego:29
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:30
+_, _ = fmt.Fprintf(w, "%v", job.Runtime().String())
+//line completedjobs.ego:30
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line completedjobs.ego:31
 _, _ = fmt.Fprintf(w, "%v", job.NumTasks)
-//line completedjobs.ego:29
+//line completedjobs.ego:31
 _, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
-//line completedjobs.ego:30
-_, _ = fmt.Fprintf(w, "%v", job.PctComplete)
-//line completedjobs.ego:30
-_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\n\t\t")
 //line completedjobs.ego:32
+_, _ = fmt.Fprintf(w, "%v", job.PctComplete)
+//line completedjobs.ego:32
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\n\t\t")
+//line completedjobs.ego:34
 	
 		}
 		
-//line completedjobs.ego:35
+//line completedjobs.ego:37
 _, _ = fmt.Fprintf(w, "\n\t</table>\n\n  </body>\n</html>")
 return nil
 }

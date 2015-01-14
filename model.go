@@ -46,7 +46,7 @@ package midtown
 import (
 	"bytes"
 	"github.com/boltdb/bolt"
-	"github.com/davecgh/go-spew/spew"
+	_ "github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"os"
 	//"container/heap"
@@ -128,7 +128,7 @@ func (this *Model) NewJobID() (newID common.JobID) {
 	const JOBID_FORMAT = "060102150405.999999"
 	for {
 		now := time.Now()
-		newID = common.JobID(strings.Replace(now.UTC().Format(JOBID_FORMAT), ".", "", 1))
+		newID = common.JobID(strings.Replace(now.Format(JOBID_FORMAT), ".", "", 1))
 		for len(newID) < len(JOBID_FORMAT)-1 {
 			newID = newID + "0"
 		}
@@ -411,9 +411,6 @@ func (this *Model) GetCompletedJobIds(tx *bolt.Tx, dt string,
 	return nil
 }
 
-// TODO:
-// func (this *Model) getCompletedJobIds(tx *bolt.Tx, dt time.Date, jobids *[]JobID, offset int, count int) error {
-
 // loads currently active jobs and populates the passed in list
 // the list is sorted such that highest priority jobs come first
 func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
@@ -448,8 +445,8 @@ func (this *Model) SummarizeJobs(jobids []common.JobID) (common.JobSummaryList, 
 			return nil, err
 		}
 
-		glog.Info("summary:") // TODO:
-		spew.Dump(summ)       // TODO:
+		//glog.Info("summary:") // TODO:
+		//spew.Dump(summ)       // TODO:
 
 		summList = append(summList, summ)
 	}
@@ -465,7 +462,7 @@ func (this *Model) GetActiveJobsSummary(offset int, count int) (common.JobSummar
 			return err
 		}
 
-		spew.Dump(jobids)
+		//spew.Dump(jobids)
 
 		summList, err = this.SummarizeJobs(jobids)
 		if err != nil {
@@ -488,7 +485,7 @@ func (this *Model) GetCompletedJobsSummary(dt string, offset int, count int) (co
 			return err
 		}
 
-		spew.Dump(jobids)
+		//spew.Dump(jobids)
 
 		summList, err = this.SummarizeJobs(jobids)
 		if err != nil {

@@ -2,23 +2,25 @@ package midtown
 
 import (
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
+	_ "github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
 	"github.com/kmanley/midtown/templates"
+	"github.com/stretchr/graceful"
 	_ "io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type WebApi struct {
 	model *Model
+	wg    *sync.WaitGroup
+	svr   *graceful.Server
 }
 
-func NewWebApi(model *Model) *WebApi {
-	return &WebApi{model}
-}
+var api *WebApi
 
 func (this *WebApi) GetActiveJobs(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	offset := 0
@@ -31,7 +33,7 @@ func (this *WebApi) GetActiveJobs(w http.ResponseWriter, r *http.Request, _ http
 		templates.Error(w, err)
 	}
 
-	spew.Dump(summList) // TODO:
+	//spew.Dump(summList) // TODO:
 
 	templates.ActiveJobs(w, summList)
 
@@ -59,18 +61,29 @@ func (this *WebApi) GetCompletedJobs(w http.ResponseWriter, r *http.Request, par
 		templates.Error(w, err)
 	}
 
-	spew.Dump(summList) // TODO:
+	//spew.Dump(summList) // TODO:
 	templates.CompletedJobs(w, dt, summList)
 }
 
 func StartWebApi(model *Model, port int, wg *sync.WaitGroup) {
-	api := NewWebApi(model)
+	api = &WebApi{model, wg, nil}
 	handler := httprouter.New()
 	handler.GET("/jobs/active", api.GetActiveJobs)
 	handler.GET("/jobs/completed/:dt", api.GetCompletedJobs)
 
 	glog.Infof("serving web API on %d", port)
-	http.ListenAndServe(fmt.Sprintf(":%d", port), handler)
+	//http.ListenAndServe(fmt.Sprintf(":%d", port), handler)
 
-	wg.Done() // TODO: make sure we do orderly shutdown and call this in all cases
+	api.svr = &graceful.Server{
+		Timeout: 5 * time.Second,
+		Server:  &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: handler},
+	}
+	api.svr.ListenAndServe()
+}
+
+func StopWebApi() {
+	glog.Infof("stopping web API...")
+	api.svr.Stop(5 * time.Second)
+	<-api.svr.StopChan()
+	api.wg.Done()
 }

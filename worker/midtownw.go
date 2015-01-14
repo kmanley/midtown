@@ -1,3 +1,10 @@
+/*
+TODO: catch sigint, etc.
+orderly shutdown on signal
+call ReallocateTask on server if we're going down
+call CheckTask during task run, graceful kill if CheckTask returns False
+*/
+
 package main
 
 import (
@@ -10,6 +17,7 @@ import (
 	"github.com/kmanley/midtown"
 	"io"
 	_ "io/ioutil"
+	"net"
 	"net/rpc"
 	"os"
 	"os/exec"
@@ -32,6 +40,7 @@ func NewWorker(serverName string, serverPort int) (*Worker, error) {
 	}
 	name := fmt.Sprintf("%s:%d", hostname, os.Getpid())
 	worker := &Worker{name, serverName, serverPort, nil}
+	glog.V(1).Infof("created worker %s", name)
 	return worker, nil
 }
 
@@ -40,16 +49,39 @@ func (this *Worker) Connect() error {
 	glog.V(1).Infof("attempting to connect to %s", distributor)
 	conn, err := rpc.Dial("tcp", distributor)
 	if err != nil {
-		// TODO:
 		glog.Errorf("can't connect to distributor %s: %s", distributor, err)
+		this.conn = nil
 		return err
 	}
 	this.conn = conn
 	return nil
 }
 
+// TODO: check shutdown channel
+func (this *Worker) ConnectRetry() error {
+	backoff := []time.Duration{1, 2, 5, 10, 20, 30}
+	ctr := 0
+	for {
+		err := this.Connect()
+		if err == nil {
+			return nil
+		}
+		if shouldReconnect(err) {
+			if ctr >= len(backoff) {
+				ctr = len(backoff) - 1
+			}
+			time.Sleep(backoff[ctr] * time.Second)
+		}
+		ctr += 1
+	}
+}
+
+// Returns true if based on the error we should try reconnecting to the distributor
 func shouldReconnect(err error) bool {
 	if err == rpc.ErrShutdown || err == io.EOF || err == io.ErrUnexpectedEOF {
+		return true
+	} else if _, ok := err.(*net.OpError); ok {
+		// e.g. connection refused...
 		return true
 	} else {
 		return false
@@ -61,18 +93,18 @@ func (this *Worker) GetNextTask() *midtown.WorkerTask {
 	err := this.conn.Call("WorkerApi.GetWorkerTask", this.name, &task)
 	if err != nil {
 		if shouldReconnect(err) {
-			this.Connect() // don't care if it causes an error, we'll keep retrying
+			this.ConnectRetry()
 			return nil
 		}
-		glog.Errorf("failed to get task: %#v", err)
+		glog.Errorf("failed to get task: %s", err)
 		return nil
 	}
 	if task.Job == "" {
 		glog.V(1).Infof("no task")
 		return nil
 	} else {
+		glog.Infof("got task %s:%d", task.Job, task.Seq)
 		if glog.V(1) {
-			glog.Infof("got task %s:%d", task.Job, task.Seq)
 			glog.Info(spew.Sdump(task))
 		}
 		return &task
@@ -123,14 +155,6 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 	fmt.Println("stdout: ", stdout.String())
 	fmt.Println("stderr: ", stderr.String())
 
-	/*
-		xyz, err := cmd.Output()
-		if err != nil {
-			glog.Errorf("cmd.Output failed: %v", err)
-		}
-		fmt.Println("output:", xyz)
-	*/
-
 	var outdata interface{}
 	if err := json.Unmarshal(stdout.Bytes(), &outdata); err != nil {
 		glog.Errorf("failed to decode stdout: %v", err)
@@ -145,27 +169,21 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 }
 
 func main() {
+
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: midtownw <distributor hostname>")
+		flag.PrintDefaults()
+	}
+
+	var basePort = flag.Int("port", 6877, "distributor base port")
 	flag.Parse()
+	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(1)
+	}
 
-	worker, _ := NewWorker("localhost", 9998)
-	worker.Connect()
-
-	//task := &midtown.WorkerTask{Cmd: "python", Args: []string{"-c", "print 12345"}}
-	//task := &midtown.WorkerTask{Cmd: "python", Args: []string{"test.py"}}
-	//task := &midtown.WorkerTask{Cmd: "echo", Args: []string{"wtf?"}}
-	/*
-		task := &midtown.WorkerTask{
-			Job:  "12345",
-			Seq:  0,
-			Cmd:  "python",
-			Args: []string{"-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"},
-			Data: "[1,2,3]",
-			Ctx:  &midtown.Context{"foo": "bar"},
-		}
-		x := worker.RunTask(task)
-		fmt.Println("-------------------")
-		fmt.Printf("%#v", x)
-	*/
+	worker, _ := NewWorker(flag.Args()[0], *basePort+2)
+	worker.ConnectRetry()
 
 	for {
 		task := worker.GetNextTask()
