@@ -16,8 +16,6 @@ bucket:
 			key=seq, value=Task
 		Done-Error (nested bucket)
 			key=seq, value=Task
-	Workers
-	    key=name, value=Worker
 
 	jobid is date based so we can easily retrieve jobs by date/time
 
@@ -58,6 +56,7 @@ import (
 	"errors"
 	"github.com/kmanley/midtown/common"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -67,23 +66,31 @@ const (
 	COMPLETED      = "Completed"
 	DONE_OK        = "Done_OK"
 	DONE_ERR       = "Done_Err"
-	WORKERS        = "Workers"
 	MAX_TASK_COUNT = 99999
 )
 
 var TASK_KEY_LEN = len(fmt.Sprint(MAX_TASK_COUNT))
 
 type Model struct {
-	Db           *bolt.DB
-	Fifo         bool // TODO: consider persisting this setting in bolt
-	Prng         *rand.Rand
-	LastJobID    common.JobID
-	ShutdownFlag chan bool
+	Db          *bolt.DB
+	Fifo        bool         // TODO: consider persisting this setting in bolt
+	Prng        *rand.Rand   // TODO: mutex?
+	LastJobID   common.JobID // TODO: mutex?
+	Workers     WorkerMap    // TODO: protect with mutex
+	WorkerMutex sync.RWMutex
+	//ShutdownFlag chan bool
+	//Shutdown chan bool
 }
+
+//func (this *Model) Shutdown() {
+//	close(this.Shutdown)
+//}
 
 func (this *Model) Init(dbname string, mode os.FileMode) error {
 
 	this.Prng = rand.New(rand.NewSource(time.Now().Unix()))
+	this.Workers = make(WorkerMap, 100)
+	//this.Shutdown = make(chan bool, 1)
 
 	db, err := bolt.Open(dbname, mode, nil)
 	if err != nil {
@@ -97,17 +104,6 @@ func (this *Model) Init(dbname string, mode os.FileMode) error {
 			if err != nil {
 				return err
 			}
-		}
-
-		// TODO: think about this; maybe instead of deleting all workers we should just
-		// clear their last contact time, then if distrib goes down then comes up state
-		// is mostly intact and workers can continue to make progress even while distrib
-		// is down.
-		// reset Workers bucket, it will be built up again as Workers contact midtownd
-		// _ = tx.DeleteBucket([]byte(WORKERS))
-		_, err = tx.CreateBucketIfNotExists([]byte(WORKERS))
-		if err != nil {
-			return err
 		}
 
 		return nil
@@ -145,10 +141,64 @@ func (this *Model) NewJobID() (newID common.JobID) {
 	return newID
 }
 
+func (this *Model) getOrCreateWorker(name string) (*Worker, error) {
+	this.WorkerMutex.RLock()
+	defer this.WorkerMutex.RUnlock()
+	worker, ok := this.Workers[name]
+	if ok {
+		// return a deep copy, workermap workers can only be updated
+		// by calling saveWorker
+		clone, err := worker.Clone()
+		if err != nil {
+			return nil, err
+		}
+		return clone, nil
+	} else {
+		return NewWorker(name), nil
+	}
+}
+
+func (this *Model) saveWorker(worker *Worker) {
+	this.WorkerMutex.Lock()
+	defer this.WorkerMutex.Unlock()
+	// NOTE: saveWorker is only called in functions that
+	// are called by workers, so we update the worker's
+	// last contact time in this central place
+	worker.updateLastContact()
+	this.Workers[worker.Name] = worker // previously referenced worker will be GC'd
+}
+
+func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
+	this.WorkerMutex.RLock()
+	defer this.WorkerMutex.RUnlock()
+	workerList := make(WorkerList, 0, len(this.Workers))
+	for _, worker := range this.Workers {
+		clone, err := worker.Clone()
+		if err != nil {
+			return nil, err
+		}
+		workerList = append(workerList, clone)
+	}
+	sort.Sort(ByName(workerList))
+	if offset == 0 && count == 0 {
+		return workerList, nil
+	}
+	start := offset
+	if start > len(workerList) {
+		start = len(workerList)
+	}
+	end := start + count
+	if end > len(workerList) {
+		end = len(workerList)
+	}
+	return workerList[start:end], nil
+}
+
+/*
 func (this *Model) getOrCreateWorker(tx *bolt.Tx, name string) (*Worker, error) {
 	bucket := tx.Bucket([]byte(WORKERS))
 	if bucket == nil {
-		return nil, fmt.Errorf("failed to open Workers bucket")
+		return nil, &ErrInternal{"failed to open Workers bucket"}
 	}
 	var worker *Worker
 	workerBytes := bucket.Get([]byte(name))
@@ -167,7 +217,7 @@ func (this *Model) getOrCreateWorker(tx *bolt.Tx, name string) (*Worker, error) 
 func (this *Model) saveWorker(tx *bolt.Tx, worker *Worker) error {
 	bucket := tx.Bucket([]byte(WORKERS))
 	if bucket == nil {
-		return fmt.Errorf("failed to open Workers bucket")
+		return &ErrInternal{"failed to open Workers bucket"}
 	}
 
 	// NOTE: saveWorker is only called in functions that
@@ -189,34 +239,43 @@ func (this *Model) saveWorker(tx *bolt.Tx, worker *Worker) error {
 
 	return nil
 }
+*/
 
-// TODO: add offset, count later to support paging when there could be hundres/thousands of workers
-func (this *Model) loadWorkers(tx *bolt.Tx, workers *WorkerList) error {
+/*
+func (this *Model) loadWorkers(tx *bolt.Tx, workers *WorkerList, offset int, count int) error {
 	bucket := tx.Bucket([]byte(WORKERS))
 	if bucket == nil {
-		return fmt.Errorf("failed to open Workers bucket")
+		return &ErrInternal{"failed to open Workers bucket"}
 	}
-	err := bucket.ForEach(func(key, workerBytes []byte) error {
-		worker := &Worker{}
-		err := worker.FromBytes(workerBytes)
-		if err != nil {
-			return err
+
+	curs := bucket.Cursor()
+	for name, workerBytes := curs.First(); name != nil; name, workerBytes = curs.Next() {
+		if offset > 0 {
+			offset -= 1
+		} else {
+			worker := &Worker{}
+			err := worker.FromBytes(workerBytes)
+			if err != nil {
+				return err
+			}
+			*workers = append(*workers, worker)
+			if count > 0 {
+				count -= 1
+				if count == 0 {
+					break
+				}
+			}
 		}
-		*workers = append(*workers, worker)
-		return nil
-	})
-	if err != nil {
-		return err
 	}
 
 	return nil
 }
-
-// TODO: add offset, count later
-func (this *Model) GetWorkers() (WorkerList, error) {
+*/
+/*
+func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
 	workers := make(WorkerList, 0, 50)
 	err := this.Db.View(func(tx *bolt.Tx) error {
-		err := this.loadWorkers(tx, &workers)
+		err := this.loadWorkers(tx, &workers, offset, count)
 		if err != nil {
 			return err
 		}
@@ -225,13 +284,17 @@ func (this *Model) GetWorkers() (WorkerList, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	spew.Dump(workers)
+
 	return workers, nil
 }
+*/
 
 func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error) {
 	bucket := tx.Bucket([]byte(which + "Jobs"))
 	if bucket == nil {
-		return nil, fmt.Errorf("failed to open %sJobs bucket", which)
+		return nil, &ErrInternal{fmt.Sprintf("failed to open %sJobs bucket", which)}
 	}
 	return bucket, nil
 }
@@ -239,11 +302,11 @@ func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error
 func (this *Model) getTasksBucket(tx *bolt.Tx, jobId common.JobID, which string) (*bolt.Bucket, error) {
 	bucket := tx.Bucket([]byte(jobId))
 	if bucket == nil {
-		return nil, fmt.Errorf("failed to open task bucket %s", jobId)
+		return nil, &ErrInternal{fmt.Sprintf("failed to open task bucket %s", jobId)}
 	}
 	subBucket := bucket.Bucket([]byte(which))
 	if subBucket == nil {
-		return nil, fmt.Errorf("failed to open task sub-bucket %s %s", jobId, which)
+		return nil, &ErrInternal{fmt.Sprintf("failed to open task sub-bucket %s %s", jobId, which)}
 	}
 	return subBucket, nil
 }
@@ -556,14 +619,14 @@ func (this *Model) CreateJob(jobDef *JobDefinition) (common.JobID, error) {
 
 func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 
+	worker, err := this.getOrCreateWorker(workerName)
+	if err != nil {
+		return nil, err
+	}
+
 	var job *Job
 	var task *Task
-	err := this.Db.Update(func(tx *bolt.Tx) error {
-
-		worker, err := this.getOrCreateWorker(tx, workerName)
-		if err != nil {
-			return err
-		}
+	err = this.Db.Update(func(tx *bolt.Tx) error {
 
 		/* TODO:
 		if worker.isWorking() {
@@ -612,11 +675,6 @@ func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 			return err
 		}
 
-		err = this.saveWorker(tx, worker)
-		if err != nil {
-			return err
-		}
-
 		// if this is the first task started for a job, need to update the job too
 		if job.Started.IsZero() {
 			job.Started = time.Now()
@@ -636,6 +694,10 @@ func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// If no error, regardless of whether we found a task or not we re-save the
+	// worker to update its last contact time
+	this.saveWorker(worker)
 
 	if job == nil || task == nil {
 		return nil, nil
@@ -851,12 +913,12 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId common.JobID) error {
 func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq int, result interface{},
 	stderr string, taskError error) error {
 
-	err := this.Db.Update(func(tx *bolt.Tx) error {
+	worker, err := this.getOrCreateWorker(workerName)
+	if err != nil {
+		return err
+	}
 
-		worker, err := this.getOrCreateWorker(tx, workerName)
-		if err != nil {
-			return err
-		}
+	err = this.Db.Update(func(tx *bolt.Tx) error {
 
 		activeJobsBucket, err := this.getJobsBucket(tx, ACTIVE)
 		if err != nil {
@@ -914,13 +976,6 @@ func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq in
 			return err
 		}
 
-		// update the worker which now has no task assigned
-		worker.setTask(nil)
-		err = this.saveWorker(tx, worker)
-		if err != nil {
-			return err
-		}
-
 		// if this task failed and the job isn't configured to continue on
 		// task errors then cancel all idle and active tasks
 		if taskError != nil && job.Ctrl.ContinueJobOnTaskError == false {
@@ -970,6 +1025,10 @@ func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq in
 	if err != nil {
 		return err
 	}
+
+	// update the worker which now has no task assigned
+	worker.setTask(nil)
+	this.saveWorker(worker)
 
 	return nil
 }
@@ -1246,44 +1305,4 @@ func ReallocateHungTasks() {
 	}
 }
 
-func PrintStats() {
-	Model.Mutex.Lock()
-	defer Model.Mutex.Unlock()
-	fmt.Println(len(Model.jobMap), "job(s)")
-	jobs := Model.Jobs.Copy()
-	for jobs.Len() > 0 {
-		// note: this pops in priority + createdtime order
-		job := (heap.Pop(jobs)).(*Job)
-		jobID := job.ID
-		started := job.Started.Format(time.RFC822)
-		if job.Started.IsZero() {
-			started = "N/A"
-		}
-		fmt.Println("job", jobID, job.Description, job.State(), "started:", started, "idle:", job.IdleTasks.Len(),
-			"running:", len(job.RunningTasks), "done:", len(job.CompletedTasks))
-	}
-}
-*/
-
-/* TODO:
-func sanityCheck() {
-	Model.Mutex.Lock()
-	defer Model.Mutex.Unlock()
-	if len(Model.JobMap) != Model.Jobs.Len() {
-		panic("# of entries in JobMap and Jobs don't match")
-	}
-	jobs := Model.Jobs.Copy()
-	for jobs.Len() > 0 {
-		// note: this pops in priority + createdtime order
-		heapJob := (heap.Pop(jobs)).(*Job)
-		mapJob, found := Model.JobMap[heapJob.ID]
-		if !found {
-			panic("job found in heap but not map")
-		}
-		if mapJob != heapJob {
-			panic("heap job != map job")
-		}
-		// TODO: lots of other checks to do
-	}
-}
 */

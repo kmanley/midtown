@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	_ "fmt"
 	"github.com/golang/glog"
 	"github.com/kmanley/midtown"
 	"os"
@@ -20,13 +20,14 @@ type Distributor struct {
 var quitChan = make(chan os.Signal, 1)
 var App Distributor
 
-func dummy(d *Distributor) {
-	d.wg.Add(1)
+func backgroundLoop(d *Distributor) {
 	defer d.wg.Done()
 	for {
 		select {
 		case <-quitChan:
-			midtown.StopWebApi()
+			go midtown.StopWebApi()
+			go midtown.StopClientApi()
+			go midtown.StopWorkerApi()
 			goto END
 		default:
 			glog.Info("dummy loop")
@@ -34,7 +35,7 @@ func dummy(d *Distributor) {
 		}
 	}
 END:
-	fmt.Println("dummy goroutine exiting")
+	glog.Info("background loop exiting")
 }
 
 func main() {
@@ -44,26 +45,38 @@ func main() {
 	flag.Parse()
 
 	webApiPort := *basePort
-	//clientApiPort := webApiPort + 1
-	//workerApiPort := clientApiPort + 1
+	clientApiPort := webApiPort + 1
+	workerApiPort := clientApiPort + 1
 
 	App.model = &midtown.Model{}
 	App.model.Init(*dbName, 0600)
 	App.wg = &sync.WaitGroup{}
 
 	App.wg.Add(1)
-	go midtown.StartWebApi(App.model, webApiPort, App.wg)
+	go func() {
+		defer App.wg.Done()
+		midtown.StartWebApi(App.model, webApiPort)
+	}()
 
-	//App.wg.Add(1)
-	//go midtown.StartClientApi(App.model, clientApiPort, App.wg)
+	App.wg.Add(1)
+	go func() {
+		defer App.wg.Done()
+		midtown.StartClientApi(App.model, clientApiPort)
+	}()
 
-	//App.wg.Add(1)
-	//go midtown.StartWorkerApi(App.model, workerApiPort, App.wg)
+	App.wg.Add(1)
+	go func() {
+		defer App.wg.Done()
+		midtown.StartWorkerApi(App.model, workerApiPort)
+	}()
 
 	signal.Notify(quitChan, syscall.SIGINT, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGTERM)
 
-	go dummy(&App)
+	App.wg.Add(1)
+	go backgroundLoop(&App)
 	App.wg.Wait()
+
+	glog.Info("midtownd stopped")
 
 	// defer db.Close() TODO: close db in shutdown handler
 }

@@ -6,18 +6,19 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/kmanley/midtown/common"
+	"github.com/mailgun/manners"
 	_ "io/ioutil"
 	"net/http"
-	"sync"
+	"strconv"
+	"time"
 )
 
 type ClientApi struct {
 	model *Model
+	svr   *manners.GracefulServer
 }
 
-func NewClientApi(model *Model) *ClientApi {
-	return &ClientApi{model}
-}
+var clientApi *ClientApi
 
 // TODO: don't allow posting job with no data! currently this can be done via python if
 // only Cmd is sent
@@ -75,8 +76,12 @@ func (this *ClientApi) GetJob(w rest.ResponseWriter, req *rest.Request) {
 }
 
 // GET /workers
-func (this *ClientApi) GetWorkers(w rest.ResponseWriter, req *rest.Request) {
-	res, err := this.model.GetWorkers()
+func (this *ClientApi) GetWorkers(w rest.ResponseWriter, r *rest.Request) {
+	offset := 0
+	count := 0
+	offset, _ = strconv.Atoi(r.FormValue("offset"))
+	count, _ = strconv.Atoi(r.FormValue("count"))
+	res, err := this.model.GetWorkers(offset, count)
 	if err != nil {
 		rest.Error(w, err.Error(), 500) // TODO: error code?
 		return
@@ -84,18 +89,38 @@ func (this *ClientApi) GetWorkers(w rest.ResponseWriter, req *rest.Request) {
 	w.WriteJson(&res)
 }
 
-func StartClientApi(model *Model, port int, wg *sync.WaitGroup) {
-	api := NewClientApi(model)
-
+func (this *ClientApi) GetHandler() *rest.ResourceHandler {
 	handler := rest.ResourceHandler{}
 	handler.SetRoutes(
-		&rest.Route{"POST", "/jobs", api.CreateJob},
-		&rest.Route{"GET", "/result/:jobid", api.GetJobResult},
-		&rest.Route{"GET", "/job/:jobid", api.GetJob},
-		&rest.Route{"GET", "/workers", api.GetWorkers},
+		&rest.Route{"POST", "/jobs", this.CreateJob},
+		&rest.Route{"GET", "/result/:jobid", this.GetJobResult},
+		&rest.Route{"GET", "/job/:jobid", this.GetJob},
+		&rest.Route{"GET", "/workers", this.GetWorkers},
 	)
-	glog.Infof("serving client API on %d", port)
-	http.ListenAndServe(fmt.Sprintf(":%d", port), &handler)
+	return &handler
+}
 
-	wg.Done() // TODO: make sure we do orderly shutdown and call this in all cases
+func StartClientApi(model *Model, port int) {
+	clientApi = &ClientApi{model, nil}
+
+	handler := clientApi.GetHandler()
+
+	clientApi.svr = manners.NewWithServer(&http.Server{
+		Addr:           fmt.Sprintf(":%d", port),
+		Handler:        handler,
+		ReadTimeout:    10 * time.Second, // TODO:?
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20, // TODO:?
+	})
+
+	glog.Infof("serving client API on %d", port)
+	// this line blocks till someone calls StopClientApi
+	clientApi.svr.ListenAndServe()
+	glog.Info("client API server stopped")
+
+}
+
+func StopClientApi() {
+	glog.Infof("stopping client API server...")
+	clientApi.svr.Close()
 }

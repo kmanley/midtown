@@ -6,21 +6,21 @@ import (
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
 	"github.com/kmanley/midtown/templates"
-	"github.com/stretchr/graceful"
+	"github.com/mailgun/manners"
 	_ "io/ioutil"
 	"net/http"
 	"strconv"
-	"sync"
+	//"sync"
 	"time"
 )
 
 type WebApi struct {
 	model *Model
-	wg    *sync.WaitGroup
-	svr   *graceful.Server
+	//wg    *sync.WaitGroup
+	svr *manners.GracefulServer
 }
 
-var api *WebApi
+var webApi *WebApi
 
 func (this *WebApi) GetActiveJobs(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	offset := 0
@@ -65,25 +65,33 @@ func (this *WebApi) GetCompletedJobs(w http.ResponseWriter, r *http.Request, par
 	templates.CompletedJobs(w, dt, summList)
 }
 
-func StartWebApi(model *Model, port int, wg *sync.WaitGroup) {
-	api = &WebApi{model, wg, nil}
+func (this *WebApi) GetHandler() *httprouter.Router {
 	handler := httprouter.New()
-	handler.GET("/jobs/active", api.GetActiveJobs)
-	handler.GET("/jobs/completed/:dt", api.GetCompletedJobs)
+	handler.GET("/jobs/active", this.GetActiveJobs)
+	handler.GET("/jobs/completed/:dt", this.GetCompletedJobs)
+	return handler
+}
+
+func StartWebApi(model *Model, port int) {
+	webApi = &WebApi{model, nil}
+	handler := webApi.GetHandler()
+
+	webApi.svr = manners.NewWithServer(&http.Server{
+		Addr:           fmt.Sprintf(":%d", port),
+		Handler:        handler,
+		ReadTimeout:    10 * time.Second, // TODO:?
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20, // TODO:?
+	})
 
 	glog.Infof("serving web API on %d", port)
-	//http.ListenAndServe(fmt.Sprintf(":%d", port), handler)
-
-	api.svr = &graceful.Server{
-		Timeout: 5 * time.Second,
-		Server:  &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: handler},
-	}
-	api.svr.ListenAndServe()
+	// this call blocks till someone calls StopWebApi
+	webApi.svr.ListenAndServe()
+	glog.Info("web server stopped")
 }
 
 func StopWebApi() {
-	glog.Infof("stopping web API...")
-	api.svr.Stop(5 * time.Second)
-	<-api.svr.StopChan()
-	api.wg.Done()
+	glog.Infof("stopping web server...")
+	webApi.svr.Close()
+
 }

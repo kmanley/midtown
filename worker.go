@@ -33,6 +33,13 @@ type Worker struct {
 }
 
 type WorkerList []*Worker
+type ByName WorkerList
+
+func (a ByName) Len() int           { return len(a) }
+func (a ByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
+
+type WorkerMap map[string]*Worker
 
 func NewWorker(name string) *Worker {
 	return &Worker{Name: name}
@@ -56,6 +63,19 @@ func (this *Worker) FromBytes(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (this *Worker) Clone() (*Worker, error) {
+	workerBytes, err := this.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	clone := &Worker{}
+	err = clone.FromBytes(workerBytes)
+	if err != nil {
+		return nil, err
+	}
+	return clone, nil
 }
 
 //func (this *Worker) String() string {

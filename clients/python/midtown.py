@@ -98,16 +98,16 @@ class MidtownClient(object):
 			return Job(self, ret)
 
 def main():
-	c = MidtownClient("localhost", 9997)
+	c = MidtownClient("localhost", 6878)
 	#c.CreateJob("python", ['-c', '"import json,sys;sys.stdout.write(json.dumps(json.loads(sys.stdin.read())*2));sys.stdout.flush()"'], 
 	#					range(3), "my job", {"path":"/foo/bar"}, 
 	#        Priority=1, MaxConcurrency=20)
 	#c.CreateJob("echo", ["123"], range(3), "test")
 	
-	job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
-	             range(20), Ctx={"foo":"bar"})
-	#job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);import time;time.sleep(1);json.dump(data*2,sys.stdout)"],
-	#             range(20), Ctx={"foo":"bar"})				
+	#job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);json.dump(data*2,sys.stdout)"],
+	#             range(20), Ctx={"foo":"bar"})
+	job = c.CreateJob("python", ["-c", "import json,sys;job,seq,data,ctx=json.load(sys.stdin);import time;time.sleep(3);json.dump(data*2,sys.stdout)"],
+	             range(10), Ctx={"foo":"bar"})				
 	ret = job.Wait()
 	print ret
 	

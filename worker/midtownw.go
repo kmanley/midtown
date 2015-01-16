@@ -170,19 +170,23 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 
 func main() {
 
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: midtownw <distributor hostname>")
-		flag.PrintDefaults()
-	}
+	//flag.Usage = func() {
+	//	fmt.Fprintln(os.Stderr, "Usage: midtownw <distributor hostname>")
+	//	flag.PrintDefaults()
+	//}
 
+	var svr = flag.String("svr", "localhost", "distributor hostname")
 	var basePort = flag.Int("port", 6877, "distributor base port")
 	flag.Parse()
-	if flag.NArg() != 1 {
-		flag.Usage()
-		os.Exit(1)
-	}
 
-	worker, _ := NewWorker(flag.Args()[0], *basePort+2)
+	/*
+		if flag.NArg() != 1 {
+			flag.Usage()
+			os.Exit(1)
+		}
+	*/
+
+	worker, _ := NewWorker(*svr, *basePort+2)
 	worker.ConnectRetry()
 
 	for {

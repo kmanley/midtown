@@ -5,16 +5,15 @@ import (
 	"github.com/golang/glog"
 	"net"
 	"net/rpc"
-	"sync"
 )
 
 type WorkerApi struct {
-	model *Model
+	model    *Model
+	listener net.Listener
+	stopping bool
 }
 
-func NewWorkerApi(model *Model) *WorkerApi {
-	return &WorkerApi{model}
-}
+var workerApi *WorkerApi
 
 func (this *WorkerApi) GetWorkerTask(workerName string, task **WorkerTask) error {
 	t, err := this.model.GetWorkerTask(workerName)
@@ -36,20 +35,30 @@ func (this *WorkerApi) SetTaskDone(result *TaskResult, ok *bool) error {
 	return err
 }
 
-func StartWorkerApi(model *Model, port int, wg *sync.WaitGroup) {
-	rpc.Register(NewWorkerApi(model))
-	glog.Infof("serving worker API on %d", port)
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port)) // TODO: allow specifying iface to bind to
+func StartWorkerApi(model *Model, port int) {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port)) // TODO: allow specifying iface to bind to
 	if err != nil {
-		fmt.Println(err)
+		glog.Errorf("worker API listen error: %s", err)
 		return
 	}
+	workerApi = &WorkerApi{model, listener, false}
+	rpc.Register(workerApi)
+	glog.Infof("serving worker API on %d", port)
 	for {
-		c, err := ln.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
-			continue
+			if !workerApi.stopping {
+				glog.Errorf("accept error: %s", err)
+			}
+			break
 		}
-		go rpc.ServeConn(c)
+		go rpc.ServeConn(conn)
 	}
-	wg.Done() // TODO: make sure we do orderly shutdown and call this in all cases
+	glog.Info("worker API server stopped")
+}
+
+func StopWorkerApi() {
+	glog.Infof("stopping worker API server...")
+	workerApi.stopping = true
+	workerApi.listener.Close()
 }
