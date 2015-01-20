@@ -1,15 +1,16 @@
-package midtown
+package common
 
 import (
 	"bytes"
 	_ "container/heap"
 	"encoding/gob"
 	_ "fmt"
-	"github.com/kmanley/midtown/common"
+	//"github.com/kmanley/midtown/common"
 	_ "regexp"
 	"time"
 )
 
+type JobID string
 type Context map[string]string
 
 type JobDefinition struct {
@@ -18,7 +19,27 @@ type JobDefinition struct {
 	Data        []interface{}
 	Description string
 	Ctx         *Context
-	Ctrl        *common.JobControl
+	Ctrl        *JobControl
+}
+
+type JobControl struct {
+	MaxConcurrency         int
+	StartTime              time.Time
+	ContinueJobOnTaskError bool
+	RemoteDir              string
+	WorkerNameRegex        string
+	//CompiledWorkerNameRegex *regexp.Regexp
+	// TODO: consider OSRegex as well, to limit to Workers matching a particular OS/version
+	//ProcessPriority int
+	// TODO: later
+	//AssignSingleTaskPerWorker bool
+	//TaskWorkerAssignment      map[string][]uint32
+	Priority int8          // higher value means higher priority
+	Timeout  time.Duration // seconds
+	//TaskTimeout          float64 // seconds
+	//TaskSeemsHungTimeout uint32
+	//AbandonedJobTimeout  uint32
+	//MaxTaskReallocations uint8
 }
 
 /*
@@ -45,11 +66,11 @@ var JOB_STATES []string = []string{
 */
 
 type Job struct {
-	Id          common.JobID
+	Id          JobID
 	Cmd         string
 	Args        []string
 	Description string
-	Ctrl        *common.JobControl
+	Ctrl        *JobControl
 	Ctx         *Context
 	Created     time.Time
 	Started     time.Time
@@ -107,13 +128,13 @@ func (this *Job) FromBytes(data []byte) error {
 	return nil
 }
 
-func NewJob(jobId common.JobID, cmd string, args []string, description string, data []interface{}, ctx *Context, ctrl *common.JobControl) (*Job, error) {
+func NewJob(jobId JobID, cmd string, args []string, description string, data []interface{}, ctx *Context, ctrl *JobControl) (*Job, error) {
 	now := time.Now()
 	if ctx == nil {
 		ctx = &Context{}
 	}
 	if ctrl == nil {
-		ctrl = &common.JobControl{}
+		ctrl = &JobControl{}
 	}
 
 	// TODO: handle AssignSingleTaskPerWorker
@@ -414,3 +435,40 @@ func (this *Job) percentComplete() float32 {
 	}
 }
 */
+
+type JobSummary struct {
+	Id              JobID
+	Description     string
+	Ctrl            *JobControl
+	Created         time.Time
+	Started         time.Time
+	Suspended       time.Time
+	Finished        time.Time
+	Error           string
+	NumTasks        int
+	NumIdleTasks    int
+	NumActiveTasks  int
+	NumDoneOkTasks  int
+	NumDoneErrTasks int
+	PctComplete     int
+}
+
+const RESOLUTION = 10 * time.Millisecond
+
+func (this *JobSummary) Waittime() time.Duration {
+	if this.Started.IsZero() {
+		return time.Now().Truncate(RESOLUTION).Sub(this.Created.Truncate(RESOLUTION))
+	} else {
+		return this.Started.Truncate(RESOLUTION).Sub(this.Created.Truncate(RESOLUTION))
+	}
+}
+
+func (this *JobSummary) Runtime() time.Duration {
+	if this.Finished.IsZero() {
+		return time.Now().Truncate(RESOLUTION).Sub(this.Started.Truncate(RESOLUTION))
+	} else {
+		return this.Finished.Truncate(RESOLUTION).Sub(this.Started.Truncate(RESOLUTION))
+	}
+}
+
+type JobSummaryList []*JobSummary

@@ -1,10 +1,12 @@
 package midtown
 
 import (
+	"errors"
 	"fmt"
 	_ "github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
+	"github.com/kmanley/midtown/common"
 	"github.com/kmanley/midtown/templates"
 	"github.com/mailgun/manners"
 	_ "io/ioutil"
@@ -65,10 +67,29 @@ func (this *WebApi) GetCompletedJobs(w http.ResponseWriter, r *http.Request, par
 	templates.CompletedJobs(w, dt, summList)
 }
 
+func (this *WebApi) GetJob(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	jobid := params.ByName("jobid")
+
+	job, err := this.model.GetJobDetails(common.JobID(jobid))
+	if err != nil {
+		templates.Error(w, err)
+		return
+	}
+
+	if job == nil {
+		templates.Error(w, errors.New("can't find job "+jobid))
+		return
+	}
+
+	//spew.Dump(summList) // TODO:
+	templates.Job(w, job)
+}
+
 func (this *WebApi) GetHandler() *httprouter.Router {
 	handler := httprouter.New()
 	handler.GET("/jobs/active", this.GetActiveJobs)
 	handler.GET("/jobs/completed/:dt", this.GetCompletedJobs)
+	handler.GET("/job/:jobid", this.GetJob)
 	return handler
 }
 

@@ -15,11 +15,15 @@ _, _ = fmt.Fprintf(w, "\n\n<html>\n  <body>\n    <h3>Active Jobs</h3>\n\t<table 
 		for _, job := range summList {
 		
 //line activejobs.ego:23
-_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td>")
+_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td><a href=\"/job/")
 //line activejobs.ego:24
 _, _ = fmt.Fprintf(w, "%v", job.Id)
 //line activejobs.ego:24
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+_, _ = fmt.Fprintf(w, "\">")
+//line activejobs.ego:24
+_, _ = fmt.Fprintf(w, "%v", job.Id)
+//line activejobs.ego:24
+_, _ = fmt.Fprintf(w, "</a></td>\n\t\t\t<td>")
 //line activejobs.ego:25
 _, _ = fmt.Fprintf(w, "%v", job.Description)
 //line activejobs.ego:25
@@ -67,11 +71,15 @@ _, _ = fmt.Fprintf(w, "</h3>\n\t<table border=\"1\" cellpadding=\"0\" cellspacin
 		for _, job := range summList {
 		
 //line completedjobs.ego:24
-_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td>")
+_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td><a href=\"/job/")
 //line completedjobs.ego:25
 _, _ = fmt.Fprintf(w, "%v", job.Id)
 //line completedjobs.ego:25
-_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+_, _ = fmt.Fprintf(w, "\">")
+//line completedjobs.ego:25
+_, _ = fmt.Fprintf(w, "%v", job.Id)
+//line completedjobs.ego:25
+_, _ = fmt.Fprintf(w, "</a></td>\n\t\t\t<td>")
 //line completedjobs.ego:26
 _, _ = fmt.Fprintf(w, "%v", job.Description)
 //line completedjobs.ego:26
@@ -116,5 +124,77 @@ _, _ = fmt.Fprintf(w, "\n\n<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <m
 _, _ = fmt.Fprintf(w, "%v",  err )
 //line error.ego:17
 _, _ = fmt.Fprintf(w, "\n    </div> <!-- /container -->\n  </body>\n</html>")
+return nil
+}
+//line job.ego:1
+ func Job(w io.Writer, job *common.Job) error  {
+//line job.ego:2
+_, _ = fmt.Fprintf(w, "\n")
+//line job.ego:5
+_, _ = fmt.Fprintf(w, "\n\n<html>\n  <body>\n    <h3>Job ")
+//line job.ego:8
+_, _ = fmt.Fprintf(w, "%v", job.Id)
+//line job.ego:8
+_, _ = fmt.Fprintf(w, "</h3>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>Attribute</th>\n\t\t\t<th>Value</th>\n\t\t</tr>\n\t\t<tr>\n\t\t\t<td>Description</td>\n\t\t\t<td>")
+//line job.ego:16
+_, _ = fmt.Fprintf(w, "%v", job.Description)
+//line job.ego:16
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\n\t\t<tr>\n\t\t\t<td>Command</td>\n\t\t\t<td>")
+//line job.ego:20
+_, _ = fmt.Fprintf(w, "%v", job.Cmd)
+//line job.ego:20
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t\t<tr>\n\t\t\t<td>Args</td>\n\t\t\t<td>")
+//line job.ego:24
+_, _ = fmt.Fprintf(w, "%v", job.Args)
+//line job.ego:24
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t\t<tr>\n\t\t\t<td>Priority</td>\n\t\t\t<td>")
+//line job.ego:28
+_, _ = fmt.Fprintf(w, "%v", job.Ctrl.Priority)
+//line job.ego:28
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t</table>\n\t<h4>Tasks</h4>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>#</th>\n\t\t\t<th>Input</th>\n\t\t\t<th>Output</th>\n\t\t\t<th>Started</th>\n\t\t\t<th>Finshed</th>\n\t\t\t<th>Elapsed</th>\n\t\t\t<th>Worker</th>\n\t\t\t<th>Error</th>\n\t\t\t<th>Stderr</th>\n\t\t</tr>\n\t\t")
+//line job.ego:45
+
+		for _, task := range job.Tasks {
+		
+//line job.ego:48
+_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td>")
+//line job.ego:49
+_, _ = fmt.Fprintf(w, "%v", task.Seq)
+//line job.ego:49
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:50
+_, _ = fmt.Fprintf(w, "%v", task.Indata)
+//line job.ego:50
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:51
+_, _ = fmt.Fprintf(w, "%v", task.Outdata)
+//line job.ego:51
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:52
+_, _ = fmt.Fprintf(w, "%v", formatTime(task.Started))
+//line job.ego:52
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:53
+_, _ = fmt.Fprintf(w, "%v", formatTime(task.Finished))
+//line job.ego:53
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>TODO</td>\n\t\t\t<td>")
+//line job.ego:55
+_, _ = fmt.Fprintf(w, "%v", task.Worker)
+//line job.ego:55
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:56
+_, _ = fmt.Fprintf(w, "%v", task.Error)
+//line job.ego:56
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line job.ego:57
+_, _ = fmt.Fprintf(w, "%v", task.Stderr)
+//line job.ego:57
+_, _ = fmt.Fprintf(w, "</td><!--TODO: truncate if long-->\n\t\t</tr>\n\t\t")
+//line job.ego:59
+	
+		}
+		
+//line job.ego:62
+_, _ = fmt.Fprintf(w, "\n\t</table>\n\t\t\n  </body>\n</html>")
 return nil
 }

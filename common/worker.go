@@ -1,6 +1,6 @@
 // TODO: at some point try to lowercase (not export) as much as possible; don't want to do it yet
 // bc not sure of implications for rpc/json serialization
-package midtown
+package common
 
 import (
 	"bytes"
@@ -82,18 +82,18 @@ func (this *Worker) Clone() (*Worker, error) {
 //	return this.Name
 //}
 
-func (this *Worker) setTask(task *Task) {
+func (this *Worker) SetTask(task *Task) {
 	this.CurrTask = task
 }
 
-func (this *Worker) isWorking() bool {
+func (this *Worker) IsWorking() bool {
 	return this.CurrTask != nil
 }
 
-func (this *Worker) updateLastContact() {
+func (this *Worker) UpdateLastContact() {
 	this.LastContact = time.Now()
 }
 
-func (this *Worker) elapsedSinceLastContact() time.Duration {
+func (this *Worker) ElapsedSinceLastContact() time.Duration {
 	return time.Since(this.LastContact)
 }

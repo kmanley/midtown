@@ -3,6 +3,7 @@ package midtown
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/kmanley/midtown/common"
 	"net"
 	"net/rpc"
 )
@@ -15,19 +16,19 @@ type WorkerApi struct {
 
 var workerApi *WorkerApi
 
-func (this *WorkerApi) GetWorkerTask(workerName string, task **WorkerTask) error {
+func (this *WorkerApi) GetWorkerTask(workerName string, task **common.WorkerTask) error {
 	t, err := this.model.GetWorkerTask(workerName)
 	if t == nil && err == nil {
 		// gob can't transmit a top level nil, so return an empty task
 		// instead; the worker will have to interpret that as 'no task'
-		*task = &WorkerTask{}
+		*task = &common.WorkerTask{}
 	} else {
 		*task = t
 	}
 	return err
 }
 
-func (this *WorkerApi) SetTaskDone(result *TaskResult, ok *bool) error {
+func (this *WorkerApi) SetTaskDone(result *common.TaskResult, ok *bool) error {
 	err := this.model.SetTaskDone(result.WorkerName, result.Job, result.Seq,
 		result.Result, result.Stderr,
 		result.Error)

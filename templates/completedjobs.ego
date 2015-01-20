@@ -21,7 +21,7 @@ import "github.com/kmanley/midtown/common"
 		for _, job := range summList {
 		%>
 		<tr>
-			<td><%=job.Id%></td>
+			<td><a href="/job/<%=job.Id%>"><%=job.Id%></a></td>
 			<td><%=job.Description%></td>
 			<td><%=formatTime(job.Created)%></td>
 			<td><%=formatTime(job.Started)%></td>

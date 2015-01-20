@@ -73,10 +73,10 @@ var TASK_KEY_LEN = len(fmt.Sprint(MAX_TASK_COUNT))
 
 type Model struct {
 	Db          *bolt.DB
-	Fifo        bool         // TODO: consider persisting this setting in bolt
-	Prng        *rand.Rand   // TODO: mutex?
-	LastJobID   common.JobID // TODO: mutex?
-	Workers     WorkerMap    // TODO: protect with mutex
+	Fifo        bool             // TODO: consider persisting this setting in bolt
+	Prng        *rand.Rand       // TODO: mutex?
+	LastJobID   common.JobID     // TODO: mutex?
+	Workers     common.WorkerMap // TODO: protect with mutex
 	WorkerMutex sync.RWMutex
 	//ShutdownFlag chan bool
 	//Shutdown chan bool
@@ -89,7 +89,7 @@ type Model struct {
 func (this *Model) Init(dbname string, mode os.FileMode) error {
 
 	this.Prng = rand.New(rand.NewSource(time.Now().Unix()))
-	this.Workers = make(WorkerMap, 100)
+	this.Workers = make(common.WorkerMap, 100)
 	//this.Shutdown = make(chan bool, 1)
 
 	db, err := bolt.Open(dbname, mode, nil)
@@ -142,7 +142,7 @@ func (this *Model) NewJobID() (newID common.JobID) {
 	return newID
 }
 
-func (this *Model) getOrCreateWorker(name string) (*Worker, error) {
+func (this *Model) getOrCreateWorker(name string) (*common.Worker, error) {
 	this.WorkerMutex.RLock()
 	defer this.WorkerMutex.RUnlock()
 	worker, ok := this.Workers[name]
@@ -155,24 +155,24 @@ func (this *Model) getOrCreateWorker(name string) (*Worker, error) {
 		}
 		return clone, nil
 	} else {
-		return NewWorker(name), nil
+		return common.NewWorker(name), nil
 	}
 }
 
-func (this *Model) saveWorker(worker *Worker) {
+func (this *Model) saveWorker(worker *common.Worker) {
 	this.WorkerMutex.Lock()
 	defer this.WorkerMutex.Unlock()
 	// NOTE: saveWorker is only called in functions that
 	// are called by workers, so we update the worker's
 	// last contact time in this central place
-	worker.updateLastContact()
+	worker.UpdateLastContact()
 	this.Workers[worker.Name] = worker // previously referenced worker will be GC'd
 }
 
-func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
+func (this *Model) GetWorkers(offset int, count int) (common.WorkerList, error) {
 	this.WorkerMutex.RLock()
 	defer this.WorkerMutex.RUnlock()
-	workerList := make(WorkerList, 0, len(this.Workers))
+	workerList := make(common.WorkerList, 0, len(this.Workers))
 	for _, worker := range this.Workers {
 		clone, err := worker.Clone()
 		if err != nil {
@@ -180,7 +180,7 @@ func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
 		}
 		workerList = append(workerList, clone)
 	}
-	sort.Sort(ByName(workerList))
+	sort.Sort(common.ByName(workerList))
 	if offset == 0 && count == 0 {
 		return workerList, nil
 	}
@@ -231,7 +231,7 @@ func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId common.JobID, which st
 	// return stats.KeyN, nil
 }
 
-func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
+func (this *Model) saveJob(bucket *bolt.Bucket, job *common.Job) error {
 	data, err := job.ToBytes()
 	if err != nil {
 		glog.Error("failed to serialize job", job.Id, err)
@@ -247,18 +247,18 @@ func (this *Model) saveJob(bucket *bolt.Bucket, job *Job) error {
 	return nil
 }
 
-func (this *Model) deleteJob(bucket *bolt.Bucket, job *Job) error {
+func (this *Model) deleteJob(bucket *bolt.Bucket, job *common.Job) error {
 	err := bucket.Delete([]byte(job.Id))
 	return err
 }
 
-func (this *Model) loadJob(bucket *bolt.Bucket, jobId common.JobID) (*Job, error) {
+func (this *Model) loadJob(bucket *bolt.Bucket, jobId common.JobID) (*common.Job, error) {
 	jobBytes := bucket.Get([]byte(jobId))
 	if jobBytes == nil {
 		return nil, &ErrInvalidJob{jobId}
 	}
 
-	job := &Job{}
+	job := &common.Job{}
 	err := job.FromBytes(jobBytes)
 	if err != nil {
 		return nil, &ErrInternal{"failed to deserialize job " + string(jobId)}
@@ -267,7 +267,7 @@ func (this *Model) loadJob(bucket *bolt.Bucket, jobId common.JobID) (*Job, error
 	return job, nil
 }
 
-func (this *Model) saveTask(bucket *bolt.Bucket, task *Task) error {
+func (this *Model) saveTask(bucket *bolt.Bucket, task *common.Task) error {
 	data, err := task.ToBytes()
 	if err != nil {
 		glog.Error("failed to serialize task ", task.Job, task.Seq, err)
@@ -284,20 +284,20 @@ func (this *Model) saveTask(bucket *bolt.Bucket, task *Task) error {
 	return nil
 }
 
-func (this *Model) deleteTask(bucket *bolt.Bucket, task *Task) error {
+func (this *Model) deleteTask(bucket *bolt.Bucket, task *common.Task) error {
 	key := fmt.Sprintf("%0*d", TASK_KEY_LEN, task.Seq)
 	err := bucket.Delete([]byte(key))
 	return err
 }
 
-func (this *Model) loadTask(bucket *bolt.Bucket, jobId common.JobID, seq int) (*Task, error) {
+func (this *Model) loadTask(bucket *bolt.Bucket, jobId common.JobID, seq int) (*common.Task, error) {
 	key := fmt.Sprintf("%0*d", TASK_KEY_LEN, seq)
 	taskBytes := bucket.Get([]byte(key))
 	if taskBytes == nil {
 		return nil, &ErrInvalidTask{jobId, seq}
 	}
 
-	task := &Task{}
+	task := &common.Task{}
 	err := task.FromBytes(taskBytes)
 	if err != nil {
 		return nil, &ErrInternal{fmt.Sprintf("failed to deserialize task %s:%s", jobId, seq)}
@@ -306,14 +306,14 @@ func (this *Model) loadTask(bucket *bolt.Bucket, jobId common.JobID, seq int) (*
 	return task, nil
 }
 
-func (this *Model) loadTasks(tx *bolt.Tx, jobId common.JobID, which string, tasks *TaskList) error {
+func (this *Model) loadTasks(tx *bolt.Tx, jobId common.JobID, which string, tasks *common.TaskList) error {
 	bucket, err := this.getTasksBucket(tx, jobId, which)
 	if err != nil {
 		return err
 	}
 
 	err = bucket.ForEach(func(key, taskBytes []byte) error {
-		task := &Task{}
+		task := &common.Task{}
 		err = task.FromBytes(taskBytes)
 		if err != nil {
 			return err
@@ -380,14 +380,14 @@ func (this *Model) GetCompletedJobIds(tx *bolt.Tx, dt string,
 
 // loads currently active jobs and populates the passed in list
 // the list is sorted such that highest priority jobs come first
-func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
+func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *common.JobList) error {
 	bucket, err := this.getJobsBucket(tx, ACTIVE)
 	if err != nil {
 		return err
 	}
 
 	err = bucket.ForEach(func(key, jobBytes []byte) error {
-		job := &Job{}
+		job := &common.Job{}
 		err = job.FromBytes(jobBytes)
 		if err != nil {
 			return err
@@ -399,7 +399,7 @@ func (this *Model) loadActiveJobs(tx *bolt.Tx, jobs *JobList) error {
 		return err
 	}
 
-	sort.Sort(ByPriority(*jobs))
+	sort.Sort(common.ByPriority(*jobs))
 
 	return nil
 }
@@ -466,9 +466,9 @@ func (this *Model) GetCompletedJobsSummary(dt string, offset int, count int) (co
 	return summList, nil
 }
 
-func (this *Model) CreateJob(jobDef *JobDefinition) (common.JobID, error) {
+func (this *Model) CreateJob(jobDef *common.JobDefinition) (common.JobID, error) {
 
-	job, err := NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Args, jobDef.Description,
+	job, err := common.NewJob(this.NewJobID(), jobDef.Cmd, jobDef.Args, jobDef.Description,
 		jobDef.Data, jobDef.Ctx, jobDef.Ctrl)
 	if err != nil {
 		return "", err
@@ -504,7 +504,7 @@ func (this *Model) CreateJob(jobDef *JobDefinition) (common.JobID, error) {
 		}
 
 		for i, taskData := range jobDef.Data {
-			task := NewTask(job.Id, i, taskData)
+			task := common.NewTask(job.Id, i, taskData)
 			err = this.saveTask(idleTasksBucket, task)
 			if err != nil {
 				return err
@@ -521,15 +521,15 @@ func (this *Model) CreateJob(jobDef *JobDefinition) (common.JobID, error) {
 	return job.Id, nil
 }
 
-func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
+func (this *Model) GetWorkerTask(workerName string) (*common.WorkerTask, error) {
 
 	worker, err := this.getOrCreateWorker(workerName)
 	if err != nil {
 		return nil, err
 	}
 
-	var job *Job
-	var task *Task
+	var job *common.Job
+	var task *common.Task
 	err = this.Db.Update(func(tx *bolt.Tx) error {
 
 		/* TODO:
@@ -559,13 +559,13 @@ func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 
 		cursor := idleTasksBucket.Cursor()
 		_, taskBytes := cursor.First()
-		task = &Task{}
+		task = &common.Task{}
 		err = task.FromBytes(taskBytes)
 		if err != nil {
 			return err
 		}
 
-		task.start(worker)
+		task.Start(worker)
 
 		// save task in the active bucket
 		err = this.saveTask(activeTasksBucket, task)
@@ -607,14 +607,14 @@ func (this *Model) GetWorkerTask(workerName string) (*WorkerTask, error) {
 		return nil, nil
 	}
 
-	ret := NewWorkerTask(job.Id, task.Seq, job.Cmd, job.Args, job.Ctrl.RemoteDir, task.Indata, job.Ctx)
+	ret := common.NewWorkerTask(job.Id, task.Seq, job.Cmd, job.Args, job.Ctrl.RemoteDir, task.Indata, job.Ctx)
 	return ret, nil
 }
 
-func (this *Model) getJobForWorker(tx *bolt.Tx, worker *Worker) (*Job, error) {
+func (this *Model) getJobForWorker(tx *bolt.Tx, worker *common.Worker) (*common.Job, error) {
 	now := time.Now()
-	activeJobs := make(JobList, 0, 50)
-	candidates := make(JobList, 0, 50)
+	activeJobs := make(common.JobList, 0, 50)
+	candidates := make(common.JobList, 0, 50)
 	err := this.loadActiveJobs(tx, &activeJobs)
 	if err != nil {
 		return nil, err
@@ -681,7 +681,7 @@ func (this *Model) getJobForWorker(tx *bolt.Tx, worker *Worker) (*Job, error) {
 	}
 }
 
-func (this *Model) modifyJob(jobId common.JobID, fn func(*Job) error) error {
+func (this *Model) modifyJob(jobId common.JobID, fn func(*common.Job) error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
 		activeJobsBucket, err := this.getJobsBucket(tx, ACTIVE)
@@ -709,15 +709,15 @@ func (this *Model) modifyJob(jobId common.JobID, fn func(*Job) error) error {
 }
 
 func (this *Model) SetJobMaxConcurrency(jobId common.JobID, maxcon int) error {
-	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.MaxConcurrency = maxcon; return nil })
+	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.MaxConcurrency = maxcon; return nil })
 }
 
 func (this *Model) SetJobPriority(jobId common.JobID, priority int8) error {
-	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Priority = priority; return nil })
+	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.Priority = priority; return nil })
 }
 
 func (this *Model) SetJobTimeout(jobId common.JobID, timeout time.Duration) error {
-	return this.modifyJob(jobId, func(job *Job) error { job.Ctrl.Timeout = timeout; return nil })
+	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.Timeout = timeout; return nil })
 }
 
 // Gets job summary info. For full task details call GetJobDetails
@@ -759,21 +759,24 @@ func (this *Model) GetJobSummary(jobId common.JobID) (*common.JobSummary, error)
 }
 
 // Gets job details including task details
-func (this *Model) GetJobDetails(jobId common.JobID) (*Job, error) {
-	var job *Job
+func (this *Model) GetJobDetails(jobId common.JobID) (*common.Job, error) {
+	var job *common.Job
 	err := this.Db.View(func(tx *bolt.Tx) error {
-		job, err := this.findJob(tx, jobId)
+		var err error
+		job, err = this.findJob(tx, jobId)
 		if err != nil {
 			return err
 		}
+
 		locs := []string{IDLE, ACTIVE, DONE_OK, DONE_ERR}
 		for idx := range locs {
 			err := this.loadTasks(tx, jobId, locs[idx], &(job.Tasks))
 			if err != nil {
+				glog.Errorf("failed to load %s tasks for job %s", locs[idx], jobId)
 				return err
 			}
 		}
-		sort.Sort(BySequence(job.Tasks))
+		sort.Sort(common.BySequence(job.Tasks))
 
 		return nil
 	})
@@ -796,12 +799,12 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId common.JobID) error {
 		}
 		cursor := bucket.Cursor()
 		for taskSeq, taskBytes := cursor.First(); taskSeq != nil; taskSeq, taskBytes = cursor.Next() {
-			pendingTask := &Task{}
+			pendingTask := &common.Task{}
 			err = pendingTask.FromBytes(taskBytes)
 			if err != nil {
 				return &ErrInternal{fmt.Sprintf("failed to deserialize pending task %s:%s", jobId, taskSeq)}
 			}
-			pendingTask.finish(nil, "", ErrTaskCanceled)
+			pendingTask.Finish(nil, "", ErrTaskCanceled)
 			err = this.saveTask(taskSaveBucket, pendingTask)
 			if err != nil {
 				return err
@@ -939,7 +942,7 @@ func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq in
 		//}
 
 		//job.setTaskDone(worker, task, result, stdout, stderr, taskError)
-		task.finish(result, stderr, taskError)
+		task.Finish(result, stderr, taskError)
 
 		taskSaveBucketName := DONE_OK
 		if taskError != nil {
@@ -1014,15 +1017,15 @@ func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq in
 	}
 
 	// update the worker which now has no task assigned
-	worker.setTask(nil)
+	worker.SetTask(nil)
 	this.saveWorker(worker)
 
 	return nil
 }
 
 // Looks for an active job, if not found looks for a completed job.
-func (this *Model) findJob(tx *bolt.Tx, jobId common.JobID) (*Job, error) {
-	var job *Job
+func (this *Model) findJob(tx *bolt.Tx, jobId common.JobID) (*common.Job, error) {
+	var job *common.Job
 	// this function can be called on either an active or completed
 	// job so we have to check both buckets
 	locs := []string{ACTIVE, COMPLETED}
@@ -1063,7 +1066,7 @@ func (this *Model) GetJobResult(jobId common.JobID) ([]interface{}, error) {
 		} else {
 			// all tasks must be in DONE_OK bucket; TODO: assert this
 			// they should also already be sorted by seq since bolt sorts by key
-			tasks := make(TaskList, 0, job.NumTasks)
+			tasks := make(common.TaskList, 0, job.NumTasks)
 			err = this.loadTasks(tx, jobId, DONE_OK, &tasks)
 			if err != nil {
 				return err

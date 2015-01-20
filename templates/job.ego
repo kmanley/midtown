@@ -1,0 +1,64 @@
+<%! func Job(w io.Writer, job *common.Job) error %>
+<%%
+import "github.com/kmanley/midtown/common" 
+%%>
+
+<html>
+  <body>
+    <h3>Job <%=job.Id%></h3>
+	<table border="1" cellpadding="0" cellspacing="0">
+		<tr>
+			<th>Attribute</th>
+			<th>Value</th>
+		</tr>
+		<tr>
+			<td>Description</td>
+			<td><%=job.Description%></td>
+		</tr>
+		<tr>
+			<td>Command</td>
+			<td><%=job.Cmd%></td>
+		</tr>		
+		<tr>
+			<td>Args</td>
+			<td><%=job.Args%></td>
+		</tr>		
+		<tr>
+			<td>Priority</td>
+			<td><%=job.Ctrl.Priority%></td>
+		</tr>		
+	</table>
+	<h4>Tasks</h4>
+	<table border="1" cellpadding="0" cellspacing="0">
+		<tr>
+			<th>#</th>
+			<th>Input</th>
+			<th>Output</th>
+			<th>Started</th>
+			<th>Finshed</th>
+			<th>Elapsed</th>
+			<th>Worker</th>
+			<th>Error</th>
+			<th>Stderr</th>
+		</tr>
+		<%
+		for _, task := range job.Tasks {
+		%>
+		<tr>
+			<td><%=task.Seq%></td>
+			<td><%=task.Indata%></td>
+			<td><%=task.Outdata%></td>
+			<td><%=formatTime(task.Started)%></td>
+			<td><%=formatTime(task.Finished)%></td>
+			<td>TODO</td>
+			<td><%=task.Worker%></td>
+			<td><%=task.Error%></td>
+			<td><%=task.Stderr%></td><!--TODO: truncate if long-->
+		</tr>
+		<%	
+		}
+		%>
+	</table>
+		
+  </body>
+</html>

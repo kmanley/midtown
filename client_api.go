@@ -23,7 +23,7 @@ var clientApi *ClientApi
 // TODO: don't allow posting job with no data! currently this can be done via python if
 // only Cmd is sent
 func (this *ClientApi) CreateJob(w rest.ResponseWriter, req *rest.Request) {
-	jobDef := &JobDefinition{}
+	jobDef := &common.JobDefinition{}
 
 	/*
 		content, err := ioutil.ReadAll(req.Body)
