@@ -21,47 +21,64 @@ import (
 	"net/rpc"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
-type Worker struct {
+type WorkerApp struct {
+	n          int
 	name       string
 	serverName string
 	serverPort int
+	quitChan   *chan bool
 	conn       *rpc.Client
 }
 
-func NewWorker(serverName string, serverPort int) (*Worker, error) {
+func NewWorkerApp(n int, serverName string, serverPort int, quitChan *chan bool) (*WorkerApp, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		glog.Error("can't get hostname: %s", err)
 		return nil, err
 	}
 	name := fmt.Sprintf("%s:%d", hostname, os.Getpid())
-	worker := &Worker{name, serverName, serverPort, nil}
+	worker := &WorkerApp{n: n, name: name, serverName: serverName, serverPort: serverPort, quitChan: quitChan}
 	glog.V(1).Infof("created worker %s", name)
 	return worker, nil
 }
 
-func (this *Worker) Connect() error {
+func (this *WorkerApp) shouldExit() bool {
+	select {
+	case <-*this.quitChan:
+		//glog.Infof("worker%d saw exit channel set", this.n)
+		return true
+	default:
+		//glog.Infof("worker%d NO exit flag yet...", this.n)
+		return false
+	}
+}
+
+func (this *WorkerApp) Connect() error {
 	distributor := fmt.Sprintf("%s:%d", this.serverName, this.serverPort)
-	glog.V(1).Infof("attempting to connect to %s", distributor)
 	conn, err := rpc.Dial("tcp", distributor)
 	if err != nil {
 		glog.Errorf("can't connect to distributor %s: %s", distributor, err)
-		this.conn = nil
 		return err
 	}
+	glog.Infof("connected to %s", distributor)
 	this.conn = conn
 	return nil
 }
 
-// TODO: check shutdown channel
-func (this *Worker) ConnectRetry() error {
+func (this *WorkerApp) ConnectRetry() error {
 	backoff := []time.Duration{1, 2, 5, 10, 20, 30}
 	ctr := 0
 	for {
+		if this.shouldExit() {
+			return nil
+		}
 		err := this.Connect()
 		if err == nil {
 			return nil
@@ -70,7 +87,8 @@ func (this *Worker) ConnectRetry() error {
 			if ctr >= len(backoff) {
 				ctr = len(backoff) - 1
 			}
-			time.Sleep(backoff[ctr] * time.Second)
+			// important: use this.Sleep not time.Sleep
+			this.Sleep(backoff[ctr] * time.Second)
 		}
 		ctr += 1
 	}
@@ -88,19 +106,20 @@ func shouldReconnect(err error) bool {
 	}
 }
 
-func (this *Worker) GetNextTask() *midtown.WorkerTask {
+func (this *WorkerApp) GetNextTask() *midtown.WorkerTask {
 	var task midtown.WorkerTask
 	err := this.conn.Call("WorkerApi.GetWorkerTask", this.name, &task)
 	if err != nil {
 		if shouldReconnect(err) {
 			this.ConnectRetry()
+			// we will be called again my main loop on next iteration
 			return nil
 		}
 		glog.Errorf("failed to get task: %s", err)
 		return nil
 	}
 	if task.Job == "" {
-		glog.V(1).Infof("no task")
+		glog.V(2).Infof("no task")
 		return nil
 	} else {
 		glog.Infof("got task %s:%d", task.Job, task.Seq)
@@ -111,18 +130,27 @@ func (this *Worker) GetNextTask() *midtown.WorkerTask {
 	}
 }
 
-func (this *Worker) SetTaskDone(taskResult *midtown.TaskResult) error {
+func (this *WorkerApp) SetTaskDone(taskResult *midtown.TaskResult) error {
 	var ok bool
+RETRY:
 	err := this.conn.Call("WorkerApi.SetTaskDone", taskResult, &ok)
 	if err != nil {
-		// TODO:
-		return err
+		if shouldReconnect(err) {
+			this.ConnectRetry()
+			if this.shouldExit() {
+				return nil
+			} else {
+				goto RETRY
+			}
+		}
+		glog.Errorf("failed to set task done: %s", err)
+		return nil
 	}
 	glog.V(1).Infof("set task %s:%d done", taskResult.Job, taskResult.Seq)
 	return nil
 }
 
-func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
+func (this *WorkerApp) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 	taskResult := &midtown.TaskResult{WorkerName: this.name, Job: task.Job, Seq: task.Seq}
 	cmd := exec.Command(task.Cmd, task.Args...)
 	cmd.Dir = task.Dir
@@ -168,28 +196,36 @@ func (this *Worker) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
 	return taskResult
 }
 
-func main() {
-
-	//flag.Usage = func() {
-	//	fmt.Fprintln(os.Stderr, "Usage: midtownw <distributor hostname>")
-	//	flag.PrintDefaults()
-	//}
-
-	var svr = flag.String("svr", "localhost", "distributor hostname")
-	var basePort = flag.Int("port", 6877, "distributor base port")
-	flag.Parse()
-
-	/*
-		if flag.NArg() != 1 {
-			flag.Usage()
-			os.Exit(1)
+func (this *WorkerApp) Sleep(dur time.Duration) {
+	const INTERVAL = 500 * time.Millisecond
+	if dur < INTERVAL {
+		time.Sleep(dur)
+	} else {
+		for ; dur > 0; dur -= INTERVAL {
+			time.Sleep(INTERVAL)
+			if this.shouldExit() {
+				return
+			}
 		}
-	*/
+	}
+}
 
-	worker, _ := NewWorker(*svr, *basePort+2)
+func WorkerMainLoop(n int, quitChan *chan bool, wg *sync.WaitGroup, svr string, port int) {
+	defer wg.Done()
+
+	worker, err := NewWorkerApp(n, svr, port, quitChan)
+	if err != nil {
+		glog.Errorf("can't create worker app: %s", err)
+		return
+	}
+
 	worker.ConnectRetry()
 
 	for {
+		if worker.shouldExit() {
+			return
+		}
+
 		task := worker.GetNextTask()
 		if task != nil {
 			// TODO: distinguish between failure to run task and an error returned by
@@ -200,8 +236,36 @@ func main() {
 		} else {
 			// TODO: orderly shutdown, signal handler etc.
 			// TODO: exponential backoff
-			time.Sleep(1 * time.Second)
+			worker.Sleep(1 * time.Second)
 		}
 	}
+}
 
+var sigChan = make(chan os.Signal, 1)
+var quitChan = make(chan bool, 1)
+
+func main() {
+	var svr = flag.String("svr", "localhost", "distributor hostname")
+	var basePort = flag.Int("port", 6877, "distributor base port")
+	var n = flag.Int("n", 1, "number of worker goroutines")
+	flag.Parse()
+
+	wg := &sync.WaitGroup{}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		<-sigChan
+		close(quitChan)
+	}()
+
+	for i := 0; i < *n; i++ {
+		wg.Add(1)
+		go WorkerMainLoop(i, &quitChan, wg, *svr, *basePort+2)
+	}
+
+	wg.Wait()
+	glog.Info("midtownw stopped")
+	glog.Flush()
 }

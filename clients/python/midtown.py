@@ -56,6 +56,7 @@ class Job(object):
 		self.jobid = jobid 
 		
 	def GetJobResult(self):
+	    # TODO: catch except requests.exceptions.ConnectionError
 		r = requests.get("http://%s:%d/result/%s" % (self.client.hostname, self.client.port, self.jobid))
 		print r.status_code
 		if r.status_code == 102:

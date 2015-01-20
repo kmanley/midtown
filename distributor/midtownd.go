@@ -70,13 +70,14 @@ func main() {
 		midtown.StartWorkerApi(App.model, workerApiPort)
 	}()
 
-	signal.Notify(quitChan, syscall.SIGINT, syscall.SIGKILL, syscall.SIGHUP, syscall.SIGTERM)
+	signal.Notify(quitChan, syscall.SIGINT, syscall.SIGTERM)
 
 	App.wg.Add(1)
 	go backgroundLoop(&App)
 	App.wg.Wait()
 
 	glog.Info("midtownd stopped")
+	glog.Flush()
 
 	// defer db.Close() TODO: close db in shutdown handler
 }

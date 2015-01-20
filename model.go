@@ -66,7 +66,7 @@ const (
 	COMPLETED      = "Completed"
 	DONE_OK        = "Done_OK"
 	DONE_ERR       = "Done_Err"
-	MAX_TASK_COUNT = 99999
+	MAX_TASK_COUNT = 9999999
 )
 
 var TASK_KEY_LEN = len(fmt.Sprint(MAX_TASK_COUNT))
@@ -102,6 +102,7 @@ func (this *Model) Init(dbname string, mode os.FileMode) error {
 		for idx := range locs {
 			_, err := tx.CreateBucketIfNotExists([]byte(locs[idx] + "Jobs"))
 			if err != nil {
+				glog.Fatalf("failed to create bucket: %s", err)
 				return err
 			}
 		}
@@ -109,10 +110,10 @@ func (this *Model) Init(dbname string, mode os.FileMode) error {
 		return nil
 	})
 	return err
-
 }
 
 func (this *Model) Close() {
+	glog.V(1).Info("closed database")
 	this.Db.Close()
 }
 
@@ -193,103 +194,6 @@ func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
 	}
 	return workerList[start:end], nil
 }
-
-/*
-func (this *Model) getOrCreateWorker(tx *bolt.Tx, name string) (*Worker, error) {
-	bucket := tx.Bucket([]byte(WORKERS))
-	if bucket == nil {
-		return nil, &ErrInternal{"failed to open Workers bucket"}
-	}
-	var worker *Worker
-	workerBytes := bucket.Get([]byte(name))
-	if workerBytes == nil {
-		worker = NewWorker(name)
-	} else {
-		worker = &Worker{}
-		err := worker.FromBytes(workerBytes)
-		if err != nil {
-			return nil, &ErrInternal{"failed to deserialize worker " + string(name)}
-		}
-	}
-	return worker, nil
-}
-
-func (this *Model) saveWorker(tx *bolt.Tx, worker *Worker) error {
-	bucket := tx.Bucket([]byte(WORKERS))
-	if bucket == nil {
-		return &ErrInternal{"failed to open Workers bucket"}
-	}
-
-	// NOTE: saveWorker is only called in functions that
-	// are called by workers, so we update the worker's
-	// last contact time in this central place
-	worker.updateLastContact()
-
-	data, err := worker.ToBytes()
-	if err != nil {
-		glog.Error("failed to serialize worker", worker.Name, err)
-		return err
-	}
-
-	err = bucket.Put([]byte(worker.Name), data)
-	if err != nil {
-		glog.Error("failed to update worker", worker.Name, err)
-		return err
-	}
-
-	return nil
-}
-*/
-
-/*
-func (this *Model) loadWorkers(tx *bolt.Tx, workers *WorkerList, offset int, count int) error {
-	bucket := tx.Bucket([]byte(WORKERS))
-	if bucket == nil {
-		return &ErrInternal{"failed to open Workers bucket"}
-	}
-
-	curs := bucket.Cursor()
-	for name, workerBytes := curs.First(); name != nil; name, workerBytes = curs.Next() {
-		if offset > 0 {
-			offset -= 1
-		} else {
-			worker := &Worker{}
-			err := worker.FromBytes(workerBytes)
-			if err != nil {
-				return err
-			}
-			*workers = append(*workers, worker)
-			if count > 0 {
-				count -= 1
-				if count == 0 {
-					break
-				}
-			}
-		}
-	}
-
-	return nil
-}
-*/
-/*
-func (this *Model) GetWorkers(offset int, count int) (WorkerList, error) {
-	workers := make(WorkerList, 0, 50)
-	err := this.Db.View(func(tx *bolt.Tx) error {
-		err := this.loadWorkers(tx, &workers, offset, count)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	spew.Dump(workers)
-
-	return workers, nil
-}
-*/
 
 func (this *Model) getJobsBucket(tx *bolt.Tx, which string) (*bolt.Bucket, error) {
 	bucket := tx.Bucket([]byte(which + "Jobs"))
@@ -907,6 +811,89 @@ func (this *Model) cancelPendingTasks(tx *bolt.Tx, jobId common.JobID) error {
 	}
 	return nil
 }
+
+/*
+func CheckJobStatus(workerName string, jobID JobID, taskSeq int) error {
+	Model.Mutex.Lock()
+	defer Model.Mutex.Unlock()
+
+	// TODO: much of this function is copied from SetTaskDone, refactor
+	worker := getOrCreateWorker(workerName)
+	if !(worker.CurrJob == jobID && worker.CurrTask == taskSeq) {
+		// Out of sync; the worker is asking about a different job/task to
+		// what we think it's working on. Our view is the truth so we reallocate the
+		// job we thought the worker was working on
+		// TODO: what about jobID, taskSeq - do we need to reallocate that too??
+		// TODO: do we really need to store worker.Job, worker.Task? I guess so since we display
+		//          workers and what they're working on
+		// TODO: logging
+		reallocateWorkerTask(worker)
+		return ERR_WORKER_OUT_OF_SYNC
+	}
+
+	job, err := getJob(jobID, true)
+	if err != nil {
+		return err
+	}
+
+	// Note we don't have to check the job state; only that the Task is
+	// still in the jobs runmap. For example job could be suspended; if it were suspended
+	// gracefully, the task will still be in the runmap, if it were graceless, the Task
+	// would have already been moved to the idlemap
+	task := job.getRunningTask(taskSeq)
+	if task == nil {
+		// TODO: logging
+		return ERR_TASK_NOT_RUNNING
+	}
+
+	err = job.timedOut()
+	if err != nil {
+		// TODO: worker should call setTaskDone in response to this, with this same error.
+		// That's better than us calling setTaskDone here, since it gives us a chance to
+		// capture stdout/stderr and possibly diagnose why the task timed out. We rely on
+		// the worker to honor this return code.
+		return err
+	}
+
+	err = job.taskTimedOut(task)
+	if err != nil {
+		// TODO: worker should call setTaskDone in response to this, with this same error.
+		// That's better than us calling setTaskDone here, since it gives us a chance to
+		// capture stdout/stderr and possibly diagnose why the task timed out. We rely on
+		// the worker to honor this return code.
+		return err
+	}
+
+	//if job.clientTimedOut()
+
+	// If there is a higher priority job with idle tasks, then we might need to kill this
+	// lower priority task to allow the higher priority task to make progress
+	job2 := getJobForWorker(workerName)
+	if (job2 != nil) && (job2.Ctrl.JobPriority > job.Ctrl.JobPriority) && (job2.numIdleTasks() > 0) {
+		// there is a higher priority task available with idle tasks, so this task
+		// should be preempted. However, if there's another running task for this
+		// job that has been running for less time, then spare this task and preempt
+		// the other (it will be preempted when *its* worker calls checkJobStatus)
+		task2 := job.getShortestRunningTask()
+		if task2 == task {
+			job.reallocateRunningTask(task)
+			return ERR_TASK_PREEMPTED_PRIORITY
+		}
+	}
+
+	// Someone may have modified this job's max concurrency via GUI or API such that
+	// it is currently running with too high a concurrency. If so, throttle it back
+	// by reallocating this task. Here we don't discern between tasks that have been running
+	// a long vs. short time. That would be difficult to do and probably not worth the effort.
+	if (job.getMaxConcurrency() > 0) && (uint32(job.numRunningTasks()) > job.getMaxConcurrency()) {
+		job.reallocateRunningTask(task)
+		return ERR_TASK_PREEMPTED_CONCURRENCY
+	}
+
+	// No error - worker should continue working on this task
+	return nil
+}
+*/
 
 // TODO: when testing, make sure job state is correct whether 1st task or nth task is in error
 // and whether ContinueJobOnTaskError is set or not
