@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
-	"github.com/kmanley/midtown"
+	"github.com/kmanley/midtown/common"
 	"io"
 	_ "io/ioutil"
 	"net"
@@ -43,7 +43,7 @@ func NewWorkerApp(n int, serverName string, serverPort int, quitChan *chan bool)
 		glog.Error("can't get hostname: %s", err)
 		return nil, err
 	}
-	name := fmt.Sprintf("%s:%d", hostname, os.Getpid())
+	name := fmt.Sprintf("%s:%d:%d", hostname, os.Getpid(), n)
 	worker := &WorkerApp{n: n, name: name, serverName: serverName, serverPort: serverPort, quitChan: quitChan}
 	glog.V(1).Infof("created worker %s", name)
 	return worker, nil
@@ -106,8 +106,8 @@ func shouldReconnect(err error) bool {
 	}
 }
 
-func (this *WorkerApp) GetNextTask() *midtown.WorkerTask {
-	var task midtown.WorkerTask
+func (this *WorkerApp) GetNextTask() *common.WorkerTask {
+	var task common.WorkerTask
 	err := this.conn.Call("WorkerApi.GetWorkerTask", this.name, &task)
 	if err != nil {
 		if shouldReconnect(err) {
@@ -130,7 +130,7 @@ func (this *WorkerApp) GetNextTask() *midtown.WorkerTask {
 	}
 }
 
-func (this *WorkerApp) SetTaskDone(taskResult *midtown.TaskResult) error {
+func (this *WorkerApp) SetTaskDone(taskResult *common.TaskResult) error {
 	var ok bool
 RETRY:
 	err := this.conn.Call("WorkerApi.SetTaskDone", taskResult, &ok)
@@ -144,14 +144,14 @@ RETRY:
 			}
 		}
 		glog.Errorf("failed to set task done: %s", err)
-		return nil
+		return err
 	}
 	glog.V(1).Infof("set task %s:%d done", taskResult.Job, taskResult.Seq)
 	return nil
 }
 
-func (this *WorkerApp) RunTask(task *midtown.WorkerTask) *midtown.TaskResult {
-	taskResult := &midtown.TaskResult{WorkerName: this.name, Job: task.Job, Seq: task.Seq}
+func (this *WorkerApp) RunTask(task *common.WorkerTask) *common.TaskResult {
+	taskResult := &common.TaskResult{WorkerName: this.name, Job: task.Job, Seq: task.Seq}
 	cmd := exec.Command(task.Cmd, task.Args...)
 	cmd.Dir = task.Dir
 
