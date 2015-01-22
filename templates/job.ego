@@ -35,7 +35,7 @@ import "github.com/kmanley/midtown/common"
 			<th>Input</th>
 			<th>Output</th>
 			<th>Started</th>
-			<th>Finshed</th>
+			<th>Finished</th>
 			<th>Elapsed</th>
 			<th>Worker</th>
 			<th>Error</th>

@@ -1,0 +1,42 @@
+<%! func Workers(w io.Writer, workers common.WorkerList) error %>
+<%%
+import "github.com/kmanley/midtown/common" 
+import "fmt" 
+%%>
+
+<html>
+  <body>
+    <h3>Active Workers</h3>
+	<table border="1" cellpadding="0" cellspacing="0">
+		<tr>
+			<th>Name</th>
+			<th>Curr Task</th>
+			<th>OS</th>
+			<th>Disk</th>
+			<th>Mem</th>
+			<th>#CPU</th>
+			<th>Last Contact</th>
+		</tr>
+		<%
+		for _, worker := range workers {
+		%>
+		<tr>
+			<td><%=worker.Name%></td>
+			<% if worker.CurrTask != nil { %>
+			<td><%=fmt.Sprintf("%s:%d", worker.CurrTask.Job, worker.CurrTask.Seq)%></td>
+			<% } else { %>
+			<td></td>
+			<%}%>
+			<td><%=worker.Stats.OSVersion%></td>
+			<td><%=worker.Stats.CurrDisk%></td>
+			<td><%=worker.Stats.CurrMem%></td>
+			<td><%=worker.Stats.CurrCpu%></td>
+			<td><%=formatTime(worker.LastContact)%></td>
+		</tr>
+		<%	
+		}
+		%>
+	</table>
+
+  </body>
+</html>

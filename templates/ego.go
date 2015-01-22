@@ -151,7 +151,7 @@ _, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t\t<tr>\n\t\t\t<td>Priority</td>\n
 //line job.ego:28
 _, _ = fmt.Fprintf(w, "%v", job.Ctrl.Priority)
 //line job.ego:28
-_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t</table>\n\t<h4>Tasks</h4>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>#</th>\n\t\t\t<th>Input</th>\n\t\t\t<th>Output</th>\n\t\t\t<th>Started</th>\n\t\t\t<th>Finshed</th>\n\t\t\t<th>Elapsed</th>\n\t\t\t<th>Worker</th>\n\t\t\t<th>Error</th>\n\t\t\t<th>Stderr</th>\n\t\t</tr>\n\t\t")
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\t\t\n\t</table>\n\t<h4>Tasks</h4>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>#</th>\n\t\t\t<th>Input</th>\n\t\t\t<th>Output</th>\n\t\t\t<th>Started</th>\n\t\t\t<th>Finished</th>\n\t\t\t<th>Elapsed</th>\n\t\t\t<th>Worker</th>\n\t\t\t<th>Error</th>\n\t\t\t<th>Stderr</th>\n\t\t</tr>\n\t\t")
 //line job.ego:45
 
 		for _, task := range job.Tasks {
@@ -196,5 +196,65 @@ _, _ = fmt.Fprintf(w, "</td><!--TODO: truncate if long-->\n\t\t</tr>\n\t\t")
 		
 //line job.ego:62
 _, _ = fmt.Fprintf(w, "\n\t</table>\n\t\t\n  </body>\n</html>")
+return nil
+}
+//line workers.ego:1
+ func Workers(w io.Writer, workers common.WorkerList) error  {
+//line workers.ego:2
+_, _ = fmt.Fprintf(w, "\n")
+//line workers.ego:6
+_, _ = fmt.Fprintf(w, "\n\n<html>\n  <body>\n    <h3>Active Workers</h3>\n\t<table border=\"1\" cellpadding=\"0\" cellspacing=\"0\">\n\t\t<tr>\n\t\t\t<th>Name</th>\n\t\t\t<th>Curr Task</th>\n\t\t\t<th>OS</th>\n\t\t\t<th>Disk</th>\n\t\t\t<th>Mem</th>\n\t\t\t<th>#CPU</th>\n\t\t\t<th>Last Contact</th>\n\t\t</tr>\n\t\t")
+//line workers.ego:21
+
+		for _, worker := range workers {
+		
+//line workers.ego:24
+_, _ = fmt.Fprintf(w, "\n\t\t<tr>\n\t\t\t<td>")
+//line workers.ego:25
+_, _ = fmt.Fprintf(w, "%v", worker.Name)
+//line workers.ego:25
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t")
+//line workers.ego:26
+ if worker.CurrTask != nil { 
+//line workers.ego:27
+_, _ = fmt.Fprintf(w, "\n\t\t\t<td>")
+//line workers.ego:27
+_, _ = fmt.Fprintf(w, "%v", fmt.Sprintf("%s:%d", worker.CurrTask.Job, worker.CurrTask.Seq))
+//line workers.ego:27
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t")
+//line workers.ego:28
+ } else { 
+//line workers.ego:29
+_, _ = fmt.Fprintf(w, "\n\t\t\t<td></td>\n\t\t\t")
+//line workers.ego:30
+}
+//line workers.ego:31
+_, _ = fmt.Fprintf(w, "\n\t\t\t<td>")
+//line workers.ego:31
+_, _ = fmt.Fprintf(w, "%v", worker.Stats.OSVersion)
+//line workers.ego:31
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line workers.ego:32
+_, _ = fmt.Fprintf(w, "%v", worker.Stats.CurrDisk)
+//line workers.ego:32
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line workers.ego:33
+_, _ = fmt.Fprintf(w, "%v", worker.Stats.CurrMem)
+//line workers.ego:33
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line workers.ego:34
+_, _ = fmt.Fprintf(w, "%v", worker.Stats.CurrCpu)
+//line workers.ego:34
+_, _ = fmt.Fprintf(w, "</td>\n\t\t\t<td>")
+//line workers.ego:35
+_, _ = fmt.Fprintf(w, "%v", formatTime(worker.LastContact))
+//line workers.ego:35
+_, _ = fmt.Fprintf(w, "</td>\n\t\t</tr>\n\t\t")
+//line workers.ego:37
+	
+		}
+		
+//line workers.ego:40
+_, _ = fmt.Fprintf(w, "\n\t</table>\n\n  </body>\n</html>")
 return nil
 }

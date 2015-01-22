@@ -42,7 +42,7 @@ func (a ByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
 type WorkerMap map[string]*Worker
 
 func NewWorker(name string) *Worker {
-	return &Worker{Name: name}
+	return &Worker{Name: name, Stats: &WorkerStats{}}
 }
 
 func (this *Worker) ToBytes() ([]byte, error) {

@@ -544,16 +544,19 @@ func (this *Model) GetWorkerTask(workerName string) (*common.WorkerTask, error) 
 		job, err = this.getJobForWorker(tx, worker)
 		if job == nil {
 			// no work available right now
+			glog.V(2).Infof("no jobs for worker %s", workerName)
 			return nil
 		}
 
 		idleTasksBucket, err := this.getTasksBucket(tx, job.Id, IDLE)
 		if err != nil {
+			glog.V(2).Infof("no idle tasks for job %s for worker %s", job.Id, workerName)
 			return err
 		}
 
 		activeTasksBucket, err := this.getTasksBucket(tx, job.Id, ACTIVE)
 		if err != nil {
+			glog.Errorf("can't get active tasks bucket for job %s", job.Id)
 			return err
 		}
 

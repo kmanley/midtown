@@ -24,6 +24,10 @@ type WebApi struct {
 
 var webApi *WebApi
 
+func (this *WebApi) Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	http.Redirect(w, r, "/jobs/active", 302)
+}
+
 func (this *WebApi) GetActiveJobs(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	offset := 0
 	count := 0
@@ -85,11 +89,28 @@ func (this *WebApi) GetJob(w http.ResponseWriter, r *http.Request, params httpro
 	templates.Job(w, job)
 }
 
+func (this *WebApi) GetWorkers(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	offset := 0
+	count := 0
+	offset, _ = strconv.Atoi(r.FormValue("offset"))
+	count, _ = strconv.Atoi(r.FormValue("count"))
+
+	workers, err := this.model.GetWorkers(offset, count)
+	if err != nil {
+		templates.Error(w, err)
+	}
+
+	//spew.Dump(summList) // TODO:
+	templates.Workers(w, workers)
+}
+
 func (this *WebApi) GetHandler() *httprouter.Router {
 	handler := httprouter.New()
+	handler.GET("/", this.Index)
 	handler.GET("/jobs/active", this.GetActiveJobs)
 	handler.GET("/jobs/completed/:dt", this.GetCompletedJobs)
 	handler.GET("/job/:jobid", this.GetJob)
+	handler.GET("/workers", this.GetWorkers)
 	return handler
 }
 
