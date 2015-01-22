@@ -76,7 +76,7 @@ type Job struct {
 	Started     time.Time
 	Suspended   time.Time
 	//Retried        time.Time // note: retried or resumed
-	//Cancelled      time.Time
+	Cancelled time.Time
 	//CancelReason   string // reason job was cancelled
 	Finished time.Time
 	//LastClientPoll time.Time

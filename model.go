@@ -159,14 +159,19 @@ func (this *Model) getOrCreateWorker(name string) (*common.Worker, error) {
 	}
 }
 
-func (this *Model) saveWorker(worker *common.Worker) {
+func (this *Model) saveWorker(worker *common.Worker, updateLastContact bool) {
 	this.WorkerMutex.Lock()
 	defer this.WorkerMutex.Unlock()
-	// NOTE: saveWorker is only called in functions that
-	// are called by workers, so we update the worker's
-	// last contact time in this central place
-	worker.UpdateLastContact()
+	if updateLastContact {
+		worker.UpdateLastContact()
+	}
 	this.Workers[worker.Name] = worker // previously referenced worker will be GC'd
+}
+
+func (this *Model) GetNumWorkers() int {
+	this.WorkerMutex.RLock()
+	defer this.WorkerMutex.RUnlock()
+	return len(this.Workers)
 }
 
 func (this *Model) GetWorkers(offset int, count int) (common.WorkerList, error) {
@@ -604,7 +609,7 @@ func (this *Model) GetWorkerTask(workerName string) (*common.WorkerTask, error) 
 
 	// If no error, regardless of whether we found a task or not we re-save the
 	// worker to update its last contact time
-	this.saveWorker(worker)
+	this.saveWorker(worker, true)
 
 	if job == nil || task == nil {
 		return nil, nil
@@ -684,7 +689,7 @@ func (this *Model) getJobForWorker(tx *bolt.Tx, worker *common.Worker) (*common.
 	}
 }
 
-func (this *Model) modifyJob(jobId common.JobID, fn func(*common.Job) error) error {
+func (this *Model) modifyJob(jobId common.JobID, fn func(*bolt.Tx, *common.Job) error) error {
 
 	err := this.Db.Update(func(tx *bolt.Tx) error {
 		activeJobsBucket, err := this.getJobsBucket(tx, ACTIVE)
@@ -697,7 +702,7 @@ func (this *Model) modifyJob(jobId common.JobID, fn func(*common.Job) error) err
 			return err
 		}
 
-		if err = fn(job); err != nil {
+		if err = fn(tx, job); err != nil {
 			return err
 		}
 
@@ -712,15 +717,91 @@ func (this *Model) modifyJob(jobId common.JobID, fn func(*common.Job) error) err
 }
 
 func (this *Model) SetJobMaxConcurrency(jobId common.JobID, maxcon int) error {
-	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.MaxConcurrency = maxcon; return nil })
+	return this.modifyJob(jobId, func(tx *bolt.Tx, job *common.Job) error { job.Ctrl.MaxConcurrency = maxcon; return nil })
 }
 
 func (this *Model) SetJobPriority(jobId common.JobID, priority int8) error {
-	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.Priority = priority; return nil })
+	return this.modifyJob(jobId, func(tx *bolt.Tx, job *common.Job) error { job.Ctrl.Priority = priority; return nil })
 }
 
 func (this *Model) SetJobTimeout(jobId common.JobID, timeout time.Duration) error {
-	return this.modifyJob(jobId, func(job *common.Job) error { job.Ctrl.Timeout = timeout; return nil })
+	return this.modifyJob(jobId, func(tx *bolt.Tx, job *common.Job) error { job.Ctrl.Timeout = timeout; return nil })
+}
+
+// NOTE: task must currently be in the active bucket
+// Caller must ensure the task's worker is updated to have no current task
+func (this *Model) reallocateTask(tx *bolt.Tx, task *common.Task) error {
+	activeTaskBucket, err := this.getTasksBucket(tx, task.Job, ACTIVE)
+	if err != nil {
+		return err
+	}
+
+	idleTaskBucket, err := this.getTasksBucket(tx, task.Job, IDLE)
+	if err != nil {
+		return err
+	}
+
+	worker := task.Worker
+	task.Reset()
+
+	// save the task in the idle bucket...
+	err = this.saveTask(idleTaskBucket, task)
+	if err != nil {
+		return err
+	}
+
+	// ...and remove the task from active bucket
+	err = this.deleteTask(activeTaskBucket, task)
+	if err != nil {
+		return err
+	}
+
+	glog.Infof("reallocated task %s:%d formerly assigned to %s", task.Job, task.Seq, worker)
+	return nil
+}
+
+func (this *Model) SuspendJob(jobId common.JobID, graceful bool) error {
+	workerNames := make([]string, 0, this.GetNumWorkers())
+	err := this.modifyJob(jobId, func(tx *bolt.Tx, job *common.Job) error {
+		if job.Suspended.IsZero() {
+			job.Suspended = time.Now()
+
+			if !graceful {
+				// TODO: need to reallocate all active tasks back in idle bucket
+
+				tasks := make(common.TaskList, 0, job.NumTasks)
+				err := this.loadTasks(tx, jobId, ACTIVE, &tasks)
+				if err != nil {
+					return err
+				}
+				for _, task := range tasks {
+					workerNames = append(workerNames, task.Worker)
+					err = this.reallocateTask(tx, task)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// TODO: need to hold rwlock here for this bulk update, also this is
+	// not transactional so if saveWorker fails we will have a partial update
+	// update any modified workers
+	for _, workerName := range workerNames {
+		worker, err := this.getOrCreateWorker(workerName)
+		if err != nil {
+			return err
+		}
+		worker.SetTask(nil)
+		this.saveWorker(worker, false)
+	}
+	return nil
 }
 
 // Gets job summary info. For full task details call GetJobDetails
@@ -1021,7 +1102,7 @@ func (this *Model) SetTaskDone(workerName string, jobId common.JobID, taskSeq in
 
 	// update the worker which now has no task assigned
 	worker.SetTask(nil)
-	this.saveWorker(worker)
+	this.saveWorker(worker, true)
 
 	return nil
 }
@@ -1117,20 +1198,6 @@ func (this *Model) GetJobResult(jobId common.JobID) ([]interface{}, error) {
 
 /*
 
-func SuspendJob(jobID JobID, graceful bool) error {
-	Model.Mutex.Lock()
-	defer Model.Mutex.Unlock()
-	job, err := getJob(jobID, true)
-	if err != nil {
-		return err
-	}
-	if !job.isWorking() {
-		return ERR_WRONG_JOB_STATE
-	}
-
-	job.suspend(graceful)
-	return nil
-}
 
 func CancelJob(jobID JobID, reason string) error {
 	Model.Mutex.Lock()
