@@ -97,6 +97,13 @@ func (this *Task) Reset() {
 	this.Stderr = ""
 }
 
+func (this *Task) IsRunning() bool {
+	if (!this.Started.IsZero()) && (this.Finished.IsZero()) {
+		return true
+	}
+	return false
+}
+
 func (this *Task) Finish(result interface{}, stderr string, err error) {
 	now := time.Now()
 	this.Outdata = result
@@ -158,6 +165,16 @@ func (this *Task) elapsed() time.Duration {
 	return this.Finished.Sub(this.Started)
 }
 */
+
+func (this *Task) Elapsed() time.Duration {
+	if this.Started.IsZero() {
+		return 0
+	}
+	if this.Finished.IsZero() {
+		return time.Now().Sub(this.Started)
+	}
+	return this.Finished.Sub(this.Started)
+}
 
 type WorkerTask struct {
 	Job  JobID

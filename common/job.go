@@ -48,7 +48,7 @@ func (this *JobDefinition) String() string {
 		fmt.Sprintf("%+v", *this.Ctrl)
 }
 */
-/*
+
 const (
 	JOB_WAITING = iota
 	JOB_RUNNING
@@ -58,12 +58,36 @@ const (
 )
 
 var JOB_STATES []string = []string{
-	"JOB_WAITING",
-	"JOB_RUNNING",
-	"JOB_SUSPENDED",
-	"JOB_DONE_OK",
-	"JOB_DONE_ERR"}
-*/
+	"Waiting",
+	"Running",
+	"Suspended",
+	"Done-OK",
+	"Done-Err"}
+
+func JobState(started time.Time, finished time.Time, suspended time.Time, err string,
+	anyRunningTasks bool) int {
+	if !finished.IsZero() {
+		if err == "" {
+			return JOB_DONE_OK
+		} else {
+			return JOB_DONE_ERR
+		}
+	}
+
+	if !suspended.IsZero() {
+		return JOB_SUSPENDED
+	}
+
+	if anyRunningTasks {
+		return JOB_RUNNING
+	}
+
+	// NOTE: JOB_WAITING can be returned even
+	// if some tasks have been completed, if there are
+	// currently no running tasks, e.g. right after a
+	// suspend/resume
+	return JOB_WAITING
+}
 
 type Job struct {
 	Id          JobID
@@ -126,6 +150,29 @@ func (this *Job) FromBytes(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+/* TODO:
+JOB_WAITING = iota
+JOB_RUNNING
+JOB_SUSPENDED
+JOB_DONE_OK
+JOB_DONE_ERR // NOTE: cancelled is a subset of JOB_DONE_ERR
+
+*/
+func (this *Job) State() int {
+	anyRunningTasks := false
+	for _, task := range this.Tasks {
+		if task.IsRunning() {
+			anyRunningTasks = true
+			break
+		}
+	}
+	return JobState(this.Started, this.Finished, this.Suspended, this.Error, anyRunningTasks)
+}
+
+func (this *Job) StateString() string {
+	return JOB_STATES[this.State()]
 }
 
 func NewJob(jobId JobID, cmd string, args []string, description string, data []interface{}, ctx *Context, ctrl *JobControl) (*Job, error) {
@@ -469,6 +516,14 @@ func (this *JobSummary) Runtime() time.Duration {
 	} else {
 		return this.Finished.Truncate(RESOLUTION).Sub(this.Started.Truncate(RESOLUTION))
 	}
+}
+
+func (this *JobSummary) State() int {
+	return JobState(this.Started, this.Finished, this.Suspended, this.Error, this.NumActiveTasks > 0)
+}
+
+func (this *JobSummary) StateString() string {
+	return JOB_STATES[this.State()]
 }
 
 type JobSummaryList []*JobSummary

@@ -10,6 +10,7 @@ import "github.com/kmanley/midtown/common"
 		<tr>
 			<th>ID</th>
 			<th>Description</th>
+			<th>State</th>
 			<th>Created</th>
 			<th>Started</th>
 			<th>Finished</th>
@@ -23,6 +24,7 @@ import "github.com/kmanley/midtown/common"
 		<tr>
 			<td><a href="/job/<%=job.Id%>"><%=job.Id%></a></td>
 			<td><%=job.Description%></td>
+			<td><%=job.StateString()%></td>
 			<td><%=formatTime(job.Created)%></td>
 			<td><%=formatTime(job.Started)%></td>
 			<td><%=formatTime(job.Finished)%></td>

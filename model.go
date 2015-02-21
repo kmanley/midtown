@@ -27,7 +27,6 @@ need another set of apis for pulling bulk data from db for gui
 check group about how to serialize error over json, or just serialize as string
 make our own error type that can serialize itself to json?
 
-
 job errors - do we want to store this in the job or note it by setting error on a task?
   e.g. job timeout
 
@@ -235,6 +234,19 @@ func (this *Model) getNumTasksInBucket(tx *bolt.Tx, jobId common.JobID, which st
 	// stats := bucket.Stats()
 	// return stats.KeyN, nil
 }
+
+/*
+func (this *Model) anyTasksInBucket(tx *bolt.Tx, jobId common.JobID, which string) (bool, error) {
+	bucket, err := this.getTasksBucket(tx, jobId, which)
+	if err != nil {
+		return false, err
+	}
+	err = bucket.ForEach(func(_, _ []byte) error {
+		return true, nil
+	})
+	return false, nil
+}
+*/
 
 func (this *Model) saveJob(bucket *bolt.Bucket, job *common.Job) error {
 	data, err := job.ToBytes()

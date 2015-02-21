@@ -16,6 +16,10 @@ import "github.com/kmanley/midtown/common"
 			<td><%=job.Description%></td>
 		</tr>
 		<tr>
+			<td>State</td>
+			<td><%=job.StateString()%></td>
+		</tr>
+		<tr>
 			<td>Command</td>
 			<td><%=job.Cmd%></td>
 		</tr>		
@@ -50,7 +54,7 @@ import "github.com/kmanley/midtown/common"
 			<td><%=task.Outdata%></td>
 			<td><%=formatTime(task.Started)%></td>
 			<td><%=formatTime(task.Finished)%></td>
-			<td>TODO</td>
+			<td><%=task.Elapsed().String()%></td>
 			<td><%=task.Worker%></td>
 			<td><%=task.Error%></td>
 			<td><%=task.Stderr%></td><!--TODO: truncate if long-->
